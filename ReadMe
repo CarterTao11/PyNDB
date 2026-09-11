@@ -1,0 +1,1 @@
+pyinstaller -w --noconfirm --clean --onefile --windowed --name PyNDB --add-data "templates;templates" --paths api app.py
