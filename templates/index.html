@@ -284,6 +284,11 @@
 
         /* SQL联想弹层 */
         .sql-section { position: relative; }
+        .sql-resizer {
+            height: 6px; flex-shrink: 0; margin-top: -1px;
+            cursor: row-resize; background: transparent; transition: background .15s;
+        }
+        .sql-resizer:hover, .sql-resizer.active { background: #007acc; }
         .sql-suggest {
             position: absolute; z-index: 100; display: none;
             background: var(--bg-panel); border: 1px solid var(--border-suggest); border-radius: 4px;
@@ -1000,7 +1005,7 @@
             if (!panel.querySelector('.content-main')) {
                 panel.insertAdjacentHTML('beforeend', `
                     <div class="content-main">
-                        <div class="sql-section">
+                        <div class="sql-section" id="sqlSection">
                             <div class="sql-toolbar">
                                 <button onclick="executeSQL()">执行 (Ctrl+Enter)</button>
                                 <button class="secondary" onclick="clearSQL()">清空</button>
@@ -1010,8 +1015,9 @@
                                 <button class="secondary" onclick="exportCSV()">导出CSV</button>
                                 <button class="secondary" onclick="exportJSON()">导出JSON</button>
                             </div>
-                            <textarea class="sql-textarea" id="sqlInput" placeholder="在此输入SQL语句... (Ctrl+Enter执行, ↑↓翻历史)"></textarea>
+                            <textarea class="sql-textarea" id="sqlInput" placeholder="在此输入SQL语句... (选中可只执行选中部分, Ctrl+Enter执行, ↑↓翻历史)"></textarea>
                         </div>
+                        <div class="sql-resizer" id="sqlResizer" title="拖拽调整编辑器高度"></div>
                         <div class="result-section">
                             <div class="result-header">
                                 <span id="resultInfo">请选择表或输入SQL</span>
@@ -1031,6 +1037,41 @@
                 `);
             }
             bindSqlInputEvents();
+            initSqlResizer();
+        }
+
+        // ==================== SQL 编辑器高度拖拽 ====================
+        function initSqlResizer() {
+            const resizer = document.getElementById('sqlResizer');
+            const section = document.getElementById('sqlSection');
+            if (!resizer || !section || resizer.dataset.bound) return;
+            resizer.dataset.bound = '1';
+            const saved = parseInt(localStorage.getItem('pyndb_sqlHeight'));
+            if (saved >= 100) section.style.height = saved + 'px';
+            resizer.addEventListener('mousedown', e => {
+                e.preventDefault();
+                const startY = e.clientY;
+                const startH = section.offsetHeight;
+                const contentMain = section.parentElement;
+                const maxH = Math.max(200, contentMain.clientHeight - 120);
+                resizer.classList.add('active');
+                document.body.style.cursor = 'row-resize';
+                document.body.style.userSelect = 'none';
+                function onMove(ev) {
+                    const h = Math.min(maxH, Math.max(100, startH + (startY - ev.clientY)));
+                    section.style.height = h + 'px';
+                }
+                function onUp() {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    resizer.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    localStorage.setItem('pyndb_sqlHeight', String(section.offsetHeight));
+                }
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
         }
         
         // 打开表标签页
@@ -1144,9 +1185,14 @@
         }
         
         // 执行SQL
+        let execSelectionUsed = false;
         async function executeSQL() {
-            const sql = document.getElementById('sqlInput').value.trim();
+            const sqlEl = document.getElementById('sqlInput');
+            // 有选中文字时, 只执行选中部分
+            const sel = sqlEl.value.substring(sqlEl.selectionStart, sqlEl.selectionEnd).trim();
+            const sql = sel || sqlEl.value.trim();
             if (!sql) return;
+            execSelectionUsed = !!sel;
             const tab = openTabs[activeTabIndex];
             // 识别主表, 结果包含完整主键列时允许双击编辑
             editCtx = tab ? await resolveEditCtx(tab.connId, sql) : null;
@@ -1686,11 +1732,13 @@
             // 可编辑条件: 识别到主表、拿到主键, 且结果包含全部主键列
             const pkReady = !!(editCtx && editCtx.pkColumns.length
                 && editCtx.pkColumns.every(pk => result.columns.includes(pk)));
-            document.getElementById('resultInfo').textContent = pkReady
-                ? `${editCtx.table} (双击单元格可编辑, 空值=NULL)`
-                : (editCtx && editCtx.pkColumns.length
-                    ? '结果未包含完整主键列, 只读'
-                    : '请选择表或输入SQL');
+            document.getElementById('resultInfo').textContent = (execSelectionUsed ? '▶ 选中执行 | ' : '')
+                + (pkReady
+                    ? `${editCtx.table} (双击单元格可编辑, 空值=NULL)`
+                    : (editCtx && editCtx.pkColumns.length
+                        ? '结果未包含完整主键列, 只读'
+                        : '请选择表或输入SQL'));
+            execSelectionUsed = false;
 
             if (!result.data || result.data.length === 0) {
                 document.getElementById('resultContent').innerHTML = 
