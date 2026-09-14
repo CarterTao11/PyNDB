@@ -161,7 +161,11 @@ class DatabaseManager:
     def connect(self) -> Any:
         """建立数据库连接"""
         start_time = time.time()
-        
+
+        # 防御: 已有旧连接先整体关闭 (含SSH隧道), 避免占用双份服务端连接槽
+        if self.connection is not None:
+            self.close()
+
         # 如果是SSH模式，先建立隧道
         if self.config.mode == 'ssh':
             self._create_ssh_tunnel()
@@ -194,7 +198,9 @@ class DatabaseManager:
                     password=self.config.password,
                     database=self.config.database_name,
                     client_encoding=self.config.charset,
-                    cursor_factory=RealDictCursor
+                    cursor_factory=RealDictCursor,
+                    application_name='pyNDB',   # pg_stat_activity 中可识别
+                    connect_timeout=10
                 )
             except Exception as e:
                 self._hint_ssh_target(e)

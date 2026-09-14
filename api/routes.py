@@ -182,19 +182,19 @@ def connect_to_database(conn_id):
     try:
         db = DatabaseManager(config)
         latency_ms = db.connect()
-        
+
         # 获取数据库信息
         version = db.get_version()
         tables = db.get_tables()
-        
+
         logger.info(f"连接成功: {version}, {len(tables)} tables")
-        
+
         # 保存连接
         set_connection(conn_id, db)
-        
+
         # 更新最后使用时间
         ConnectionModel.update_last_used(conn_id)
-        
+
         return jsonify({
             'success': True,
             'conn_id': conn_id,
@@ -204,6 +204,12 @@ def connect_to_database(conn_id):
             'message': '连接成功'
         })
     except Exception as e:
+        # 连接半途失败 (如已连上但取版本/表清单出错): 显式释放, 不留孤儿连接
+        try:
+            if db is not None:
+                db.close()
+        except Exception:
+            pass
         logger.exception("连接失败: %s", e)
         return jsonify({'success': False, 'error': str(e)}), 500
 
