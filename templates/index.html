@@ -1308,13 +1308,31 @@
             return [];
         }
 
-        function getSuggestCandidates(before, tab) {
+        // 光标前最后一个子句关键字, 用于判断列上下文/表上下文
+        function lastClause(before) {
+            const re = /\b(select|from|where|having|order\s+by|group\s+by|join|on|and|or|into|update|set|limit|offset|values|union)\b/gi;
+            let last = null, m;
+            while ((m = re.exec(before)) !== null) {
+                last = m[1].toUpperCase().replace(/\s+/g, ' ');
+            }
+            return last;
+        }
+
+        // SQL 中已写出的主表 (FROM/JOIN/UPDATE/INTO 后的第一个表), 无则用当前选中表
+        function findReferencedTable(before, tab) {
+            const m = before.match(/\b(?:from|join|update|into)\s+["`]?([A-Za-z0-9_.]+)["`]?/i);
+            if (!m) return tab.tableName || '';
+            const parts = m[1].split('.');
+            return parts[parts.length - 1];
+        }
+
+        function getSuggestCandidates(before, fullSql, tab) {
             const conn = activeConnections[tab.connId] || {};
             const tables = (conn.tables || []).map(n => ({ name: n, type: '表' }));
             const views = (conn.views || []).map(n => ({ name: n, type: '视图' }));
             const keywords = SQL_KEYWORDS.map(k => ({ name: k, type: '关键字' }));
 
-            // "表名." 或 "表名.前缀" → 建议该表的列
+            // 1. "表名." 或 "表名.前缀" → 建议该表的列
             const dot = before.match(/([A-Za-z0-9_"]+)\.([A-Za-z0-9_]*)$/);
             if (dot) {
                 const tableName = dot[1].replace(/"/g, '');
@@ -1325,10 +1343,28 @@
 
             const m = before.match(/[A-Za-z0-9_]+$/);
             const token = m ? m[0] : '';
-            if (!token) return [];
             const lower = token.toLowerCase();
-            return tables.concat(views, keywords)
-                .filter(it => it.name.toLowerCase().startsWith(lower) && it.name.toLowerCase() !== lower);
+            const filt = arr => arr.filter(it =>
+                it.name.toLowerCase().startsWith(lower) && it.name.toLowerCase() !== lower);
+
+            const clause = lastClause(before);
+
+            // 2. 表上下文: FROM/JOIN/UPDATE/INTO 之后 → 表和视图
+            if (['FROM', 'JOIN', 'UPDATE', 'INTO'].includes(clause)) {
+                return filt(tables.concat(views));
+            }
+            // 3. 中性位置: LIMIT/OFFSET/VALUES/UNION 之后 → 不联想
+            if (['LIMIT', 'OFFSET', 'VALUES', 'UNION'].includes(clause)) {
+                return [];
+            }
+            // 4. 列上下文 (SELECT/WHERE/ORDER BY/GROUP BY/HAVING/ON/AND/OR/SET/语句开头):
+            //    优先用整条语句中已输入的表名(含光标之后的FROM等)对应的字段; 没有表名则用当前选中表
+            const refTable = findReferencedTable(fullSql, tab);
+            const typeLabel = refTable ? ((refTable === tab.tableName ? '当前表' : refTable) + ' 列') : '列';
+            const cols = refTable
+                ? getCachedColumns(tab.connId, refTable).map(c => ({ name: c, type: typeLabel }))
+                : [];
+            return filt(cols.concat(keywords, token ? tables : []));
         }
 
         function updateSuggestions() {
@@ -1339,8 +1375,9 @@
             const tab = openTabs[activeTabIndex];
             if (!tab) { hideSuggestions(); return; }
 
-            const before = el.value.slice(0, el.selectionStart);
-            const items = getSuggestCandidates(before, tab);
+            const fullSql = el.value;
+            const before = fullSql.slice(0, el.selectionStart);
+            const items = getSuggestCandidates(before, fullSql, tab);
             if (!items.length) { hideSuggestions(); return; }
 
             const dot = before.match(/([A-Za-z0-9_"]+)\.([A-Za-z0-9_]*)$/);

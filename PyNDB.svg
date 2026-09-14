@@ -1,0 +1,24 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="28" fill="#1E1E2E"/>
+
+  <!-- 第一层 -->
+  <ellipse cx="64" cy="26" rx="28" ry="9" fill="#3776AB"/>
+  <path d="M36 26 v14 a28 9 0 0 0 56 0 V26 Z" fill="#3776AB"/>
+  <ellipse cx="64" cy="40" rx="28" ry="9" fill="#4A8BC2"/>
+
+  <!-- 第二层 -->
+  <path d="M36 40 v14 a28 9 0 0 0 56 0 V40 Z" fill="#4A8BC2"/>
+  <ellipse cx="64" cy="54" rx="28" ry="9" fill="#7FB2E0"/>
+
+  <!-- 第三层：补上顶盖椭圆，顶部就是圆弧 -->
+  <ellipse cx="64" cy="54" rx="28" ry="9" fill="#FFD43B"/>
+  <path d="M36 54 v14 a28 9 0 0 0 56 0 V54 Z" fill="#FFD43B"/>
+  <ellipse cx="64" cy="68" rx="28" ry="9" fill="#E6B800"/>
+
+  <!-- 文案 -->
+  <text x="64" y="104"
+        font-family="'JetBrains Mono','Fira Code',Menlo,Consolas,monospace"
+        font-size="20" font-weight="700"
+        text-anchor="middle" fill="#F7F9FC"
+        letter-spacing="1">PyNDB</text>
+</svg>
