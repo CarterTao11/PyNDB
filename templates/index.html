@@ -322,6 +322,21 @@
             font-size: 13px; 
         }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #007acc; }
+        .form-group .checkbox-inline {
+            display: flex; align-items: center; gap: 8px;
+            height: 36px; color: #d4d4d4; font-size: 13px;
+            cursor: pointer; margin-bottom: 0;
+        }
+        .form-group .checkbox-inline input[type="checkbox"] {
+            width: auto; margin: 0; accent-color: #007acc; cursor: pointer;
+        }
+        .idx-col-row {
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
+            padding: 6px 10px; border-bottom: 1px solid #3c3c3c;
+        }
+        .idx-col-row:last-child { border-bottom: none; }
+        .idx-col-row .idx-dir { width: 90px; padding: 4px 8px; }
+        .idx-col-row .idx-dir:disabled { opacity: .45; }
         .form-group textarea { resize: vertical; min-height: 80px; }
         
         .form-group.checkbox { display: flex; align-items: center; gap: 8px; }
@@ -647,6 +662,90 @@
         </div>
     </div>
     
+    <!-- 字段编辑对话框 (添加/修改字段) -->
+    <div class="modal" id="columnModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="columnModalTitle">添加字段</span>
+                <span class="close" onclick="closeColumnModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>字段名 *</label>
+                        <input type="text" id="colEditName" placeholder="字段名">
+                    </div>
+                    <div class="form-group">
+                        <label>类型 *</label>
+                        <select id="colEditType"></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>长度/精度</label>
+                        <input type="text" id="colEditLength" placeholder="如 100 或 10,2 (选填)">
+                    </div>
+                    <div class="form-group">
+                        <label>默认值</label>
+                        <input type="text" id="colEditDefault" placeholder="如 0 / abc / CURRENT_TIMESTAMP">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>约束</label>
+                        <label class="checkbox-inline">
+                            <input type="checkbox" id="colEditNotNull"> NOT NULL (不允许为空)
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>注释</label>
+                        <input type="text" id="colEditComment" placeholder="字段注释">
+                    </div>
+                </div>
+                <div id="colEditInfo" style="color:#858585;font-size:12px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeColumnModal()">取消</button>
+                <button class="btn btn-success" onclick="saveColumn()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建索引对话框 -->
+    <div class="modal" id="indexModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>新建索引</span>
+                <span class="close" onclick="closeIndexModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>索引名 (留空自动生成)</label>
+                        <input type="text" id="idxName" placeholder="idx_表名_字段名">
+                    </div>
+                    <div class="form-group">
+                        <label>索引方法</label>
+                        <select id="idxMethod"></select>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:15px;">
+                    <label class="checkbox-inline" style="height:auto;">
+                        <input type="checkbox" id="idxUnique"> 唯一索引 (UNIQUE)
+                    </label>
+                </div>
+                <div class="form-section">
+                    <div class="form-section-title">索引字段 (勾选并选择排序)</div>
+                    <div id="idxColumnList" style="max-height:220px;overflow-y:auto;border:1px solid #5c5c5c;border-radius:4px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeIndexModal()">取消</button>
+                <button class="btn btn-success" onclick="saveIndex()">创建</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 确认对话框 -->
     <div class="modal confirm-modal" id="confirmModal">
         <div class="modal-content">
@@ -959,18 +1058,20 @@
         async function loadTableData() {
             if (activeTabIndex < 0) return;
             const tab = openTabs[activeTabIndex];
-            
-            const sql = document.getElementById('sqlInput').value.trim();
+            const sqlEl = document.getElementById('sqlInput');
+            const sql = sqlEl.value.trim();
+            const autoTable = sqlEl.dataset.autoTable || '';
             let querySql = sql;
-            
-            if (!querySql) {
-                // MySQL 用反引号, PostgreSQL 用双引号
+
+            // 输入框为空, 或残留的是其他表的自动查询时, 重新生成当前表查询 (默认10条)
+            if (!sql || (autoTable && autoTable !== tab.tableName)) {
                 const dbType = (connections[tab.connId] || {}).db_type;
                 const qt = dbType === 'mysql' ? '`' : '"';
-                querySql = `SELECT * FROM ${qt}${tab.tableName}${qt} LIMIT 100`;
-                document.getElementById('sqlInput').value = querySql;
+                querySql = `SELECT * FROM ${qt}${tab.tableName}${qt} LIMIT 10`;
+                sqlEl.value = querySql;
+                sqlEl.dataset.autoTable = tab.tableName;
             }
-            
+
             // 表数据浏览模式与手动执行统一: 识别主表, 有主键即可编辑
             editCtx = await resolveEditCtx(tab.connId, querySql);
             await executeQuery(querySql);
@@ -1146,7 +1247,8 @@
             if (!el || el.dataset.bound) return;
             el.dataset.bound = '1';
             el.addEventListener('keydown', sqlInputKeydown);
-            el.addEventListener('input', updateSuggestions);
+            // 用户手动输入后清除"自动生成"标记, loadTableData 将尊重用户SQL
+            el.addEventListener('input', () => { el.dataset.autoTable = ''; updateSuggestions(); });
             el.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
             el.addEventListener('click', hideSuggestions);
             el.addEventListener('scroll', hideSuggestions);
@@ -1470,6 +1572,221 @@
         }
         
         // 显示表结构
+        // ==================== 字段添加/修改/删除 ====================
+        const COLUMN_TYPES = {
+            mysql: ['INT', 'BIGINT', 'TINYINT', 'SMALLINT', 'VARCHAR', 'CHAR', 'TEXT', 'DECIMAL', 'FLOAT', 'DOUBLE', 'DATE', 'DATETIME', 'TIMESTAMP', 'TIME', 'BOOLEAN', 'JSON', 'BLOB'],
+            postgresql: ['INTEGER', 'BIGINT', 'SMALLINT', 'VARCHAR', 'CHAR', 'TEXT', 'NUMERIC', 'REAL', 'DOUBLE PRECISION', 'DATE', 'TIMESTAMP', 'TIMESTAMPTZ', 'TIME', 'BOOLEAN', 'JSONB', 'UUID', 'BYTEA']
+        };
+        // information_schema 的 data_type -> 下拉选项归一化
+        const TYPE_ALIAS = {
+            'CHARACTER VARYING': 'VARCHAR', 'VARCHAR': 'VARCHAR', 'CHARACTER': 'CHAR', 'BPCHAR': 'CHAR', 'CHAR': 'CHAR',
+            'INT': 'INT', 'INTEGER': 'INTEGER', 'INT4': 'INTEGER', 'MEDIUMINT': 'INT',
+            'BIGINT': 'BIGINT', 'INT8': 'BIGINT', 'SMALLINT': 'SMALLINT', 'INT2': 'SMALLINT', 'TINYINT': 'TINYINT',
+            'NUMERIC': 'NUMERIC', 'DECIMAL': 'DECIMAL',
+            'DOUBLE PRECISION': 'DOUBLE PRECISION', 'DOUBLE': 'DOUBLE', 'REAL': 'REAL', 'FLOAT': 'FLOAT', 'FLOAT4': 'REAL', 'FLOAT8': 'DOUBLE PRECISION',
+            'TIMESTAMP WITHOUT TIME ZONE': 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE': 'TIMESTAMPTZ',
+            'TIMESTAMP': 'TIMESTAMP', 'DATETIME': 'DATETIME', 'DATE': 'DATE', 'TIME': 'TIME',
+            'BOOLEAN': 'BOOLEAN', 'BOOL': 'BOOLEAN',
+            'TEXT': 'TEXT', 'JSON': 'JSON', 'JSONB': 'JSONB', 'UUID': 'UUID', 'BYTEA': 'BYTEA', 'BLOB': 'BLOB'
+        };
+        let structureColumns = [];  // 当前表结构的字段列表 (供修改/删除按索引引用)
+        let structureIndexes = [];  // 当前表的索引列表 (供删除按索引引用)
+        let colEditOld = null;      // null=添加字段, 否则为被编辑的原始字段行
+
+        function showColumnModal(idx) {
+            const tab = openTabs[activeTabIndex];
+            if (!tab) return;
+            colEditOld = (idx === null || idx === undefined) ? null : structureColumns[idx];
+            const dbType = (connections[tab.connId] || {}).db_type || 'postgresql';
+            const types = COLUMN_TYPES[dbType] || COLUMN_TYPES.postgresql;
+            const sel = document.getElementById('colEditType');
+
+            let curType = '', curName = '', curLength = '', curDefault = '', curComment = '', curNotNull = false, curExtra = '';
+            if (colEditOld) {
+                curName = colEditOld.COLUMN_NAME || colEditOld.column_name || '';
+                curType = String(colEditOld.DATA_TYPE || colEditOld.data_type || '').toUpperCase();
+                curLength = colEditOld.length == null ? '' : String(colEditOld.length);
+                curDefault = colEditOld.COLUMN_DEFAULT ?? colEditOld.column_default ?? '';
+                curComment = colEditOld.COLUMN_COMMENT || colEditOld.column_comment || '';
+                curNotNull = (colEditOld.IS_NULLABLE || colEditOld.is_nullable) === 'NO';
+                curExtra = colEditOld.EXTRA || colEditOld.extra || '';
+            }
+            // 当前类型不在下拉列表时原样追加为选项, 保证保存不破坏原类型
+            const selected = TYPE_ALIAS[curType] || curType;
+            const options = selected && types.includes(selected) ? types : [selected, ...types];
+            sel.innerHTML = options.map(t => `<option value="${t}" ${t === selected ? 'selected' : ''}>${t}</option>`).join('');
+
+            document.getElementById('columnModalTitle').textContent = colEditOld ? `修改字段: ${curName}` : '添加字段';
+            document.getElementById('colEditName').value = curName;
+            document.getElementById('colEditLength').value = curLength;
+            document.getElementById('colEditDefault').value = curDefault;
+            document.getElementById('colEditComment').value = curComment;
+            document.getElementById('colEditNotNull').checked = curNotNull;
+            document.getElementById('colEditInfo').textContent = colEditOld
+                ? '提示: 默认值保持原样时不会改动它 (保护 nextval 等序列默认)'
+                : '提示: 类型下拉选基底类型, 长度单独填 (如 VARCHAR + 100, DECIMAL + 10,2)';
+            document.getElementById('columnModal').classList.add('show');
+        }
+
+        function closeColumnModal() {
+            document.getElementById('columnModal').classList.remove('show');
+        }
+
+        async function saveColumn() {
+            const tab = openTabs[activeTabIndex];
+            if (!tab) return;
+            const name = document.getElementById('colEditName').value.trim();
+            const type = document.getElementById('colEditType').value;
+            const length = document.getElementById('colEditLength').value.trim();
+            const defVal = document.getElementById('colEditDefault').value;
+            const comment = document.getElementById('colEditComment').value;
+            const notNull = document.getElementById('colEditNotNull').checked;
+            if (!name) { alert('请输入字段名'); return; }
+            if (!type) { alert('请选择类型'); return; }
+
+            const spec = { name, type, length: length || null, not_null: notNull, default: defVal, comment };
+            let url, body;
+            if (colEditOld) {
+                const origName = colEditOld.COLUMN_NAME || colEditOld.column_name;
+                const origDefault = colEditOld.COLUMN_DEFAULT ?? colEditOld.column_default;
+                spec.default_same = String(defVal) === String(origDefault ?? '');
+                spec.original_default = origDefault;
+                spec.extra = colEditOld.EXTRA || colEditOld.extra || '';
+                url = '/api/v1/table/modify-column';
+                body = { connectionId: tab.connId, table: tab.tableName, oldName: origName, column: spec };
+            } else {
+                url = '/api/v1/table/add-column';
+                body = { connectionId: tab.connId, table: tab.tableName, column: spec };
+            }
+            try {
+                const res = await fetch(url, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeColumnModal();
+                    showStructure();  // 刷新表结构
+                } else {
+                    alert('保存失败: ' + data.error);
+                }
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        }
+
+        function dropColumnConfirm(idx) {
+            const col = structureColumns[idx];
+            if (!col) return;
+            const name = col.COLUMN_NAME || col.column_name;
+            showConfirmModal(`确定删除字段 ${name} 吗? 该操作不可恢复!`, async () => {
+                const tab = openTabs[activeTabIndex];
+                if (!tab) return;
+                try {
+                    const res = await fetch('/api/v1/table/drop-column', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ connectionId: tab.connId, table: tab.tableName, column: name })
+                    });
+                    const data = await res.json();
+                    if (data.success) showStructure();
+                    else alert('删除失败: ' + data.error);
+                } catch (e) {
+                    alert('删除失败: ' + e.message);
+                }
+            });
+        }
+
+        // ==================== 索引新建/删除 ====================
+        function showIndexModal() {
+            const tab = openTabs[activeTabIndex];
+            if (!tab) return;
+            if (!structureColumns.length) { alert('请先加载表结构'); return; }
+            const dbType = (connections[tab.connId] || {}).db_type || 'postgresql';
+            const methods = dbType === 'mysql'
+                ? [['', '默认'], ['BTREE', 'BTREE'], ['HASH', 'HASH'], ['FULLTEXT', 'FULLTEXT']]
+                : [['', '默认 (btree)'], ['btree', 'BTREE'], ['hash', 'HASH'], ['gin', 'GIN'], ['gist', 'GiST'], ['brin', 'BRIN']];
+            document.getElementById('idxMethod').innerHTML =
+                methods.map(m => `<option value="${m[0]}">${m[1]}</option>`).join('');
+            document.getElementById('idxName').value = '';
+            document.getElementById('idxUnique').checked = false;
+            document.getElementById('idxColumnList').innerHTML = structureColumns.map(col => {
+                const n = col.COLUMN_NAME || col.column_name;
+                return `<div class="idx-col-row">
+                    <label style="display:flex;align-items:center;gap:6px;flex:1;cursor:pointer;">
+                        <input type="checkbox" class="idx-col" value="${escapeHtml(n)}"
+                               onchange="this.closest('.idx-col-row').querySelector('.idx-dir').disabled = !this.checked">
+                        ${escapeHtml(n)}
+                    </label>
+                    <select class="idx-dir" disabled>
+                        <option value="ASC">ASC</option>
+                        <option value="DESC">DESC</option>
+                    </select>
+                </div>`;
+            }).join('');
+            document.getElementById('indexModal').classList.add('show');
+        }
+
+        function closeIndexModal() {
+            document.getElementById('indexModal').classList.remove('show');
+        }
+
+        async function saveIndex() {
+            const tab = openTabs[activeTabIndex];
+            if (!tab) return;
+            const cols = [];
+            document.querySelectorAll('#idxColumnList .idx-col-row').forEach(row => {
+                const cb = row.querySelector('.idx-col');
+                if (cb.checked) cols.push({ name: cb.value, dir: row.querySelector('.idx-dir').value });
+            });
+            if (!cols.length) { alert('请至少勾选一个索引字段'); return; }
+            const body = {
+                connectionId: tab.connId,
+                table: tab.tableName,
+                index: {
+                    name: document.getElementById('idxName').value.trim(),
+                    unique: document.getElementById('idxUnique').checked,
+                    method: document.getElementById('idxMethod').value,
+                    columns: cols
+                }
+            };
+            try {
+                const res = await fetch('/api/v1/table/create-index', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeIndexModal();
+                    showStructure();
+                } else {
+                    alert('创建失败: ' + data.error);
+                }
+            } catch (e) {
+                alert('创建失败: ' + e.message);
+            }
+        }
+
+        function dropIndexConfirm(idx) {
+            const item = structureIndexes[idx];
+            if (!item) return;
+            const name = item.INDEX_NAME || item.indexname;
+            showConfirmModal(`确定删除索引 ${name} 吗? (主键/约束自动创建的索引无法直接删除)`, async () => {
+                const tab = openTabs[activeTabIndex];
+                if (!tab) return;
+                try {
+                    const res = await fetch('/api/v1/table/drop-index', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ connectionId: tab.connId, table: tab.tableName, name })
+                    });
+                    const data = await res.json();
+                    if (data.success) showStructure();
+                    else alert('删除失败: ' + data.error);
+                } catch (e) {
+                    alert('删除失败: ' + e.message);
+                }
+            });
+        }
+
         async function showStructure() {
             if (activeTabIndex < 0) return;
             const tab = openTabs[activeTabIndex];
@@ -1491,32 +1808,50 @@
                         `;
                     }
                     
+                    structureColumns = data.columns || [];
+
                     // 字段信息
-                    html += '<div class="structure-section"><h4>字段信息</h4><table class="structure-table"><thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>键</th><th>默认值</th><th>注释</th></tr></thead><tbody>';
-                    data.columns.forEach(col => {
+                    html += '<div class="structure-section"><h4>字段信息 '
+                        + '<button class="btn btn-primary btn-sm" onclick="showColumnModal(null)" style="margin-left:8px;">+ 添加字段</button>'
+                        + '</h4><table class="structure-table"><thead><tr><th>字段名</th><th>类型</th><th>长度</th><th>可空</th><th>键</th><th>默认值</th><th>注释</th><th>操作</th></tr></thead><tbody>';
+                    structureColumns.forEach((col, idx) => {
+                        const name = col.COLUMN_NAME || col.column_name;
                         html += `<tr>
-                            <td>${col.COLUMN_NAME || col.column_name}</td>
-                            <td>${col.DATA_TYPE || col.data_type}</td>
+                            <td>${escapeHtml(name)}</td>
+                            <td>${escapeHtml(col.DATA_TYPE || col.data_type || '')}</td>
+                            <td>${col.length == null ? '-' : escapeHtml(col.length)}</td>
                             <td>${col.IS_NULLABLE || col.is_nullable}</td>
                             <td>${col.COLUMN_KEY || (col.is_primary_key ? 'PRI' : '')}</td>
-                            <td>${col.COLUMN_DEFAULT || col.column_default || '-'}</td>
-                            <td>${col.COLUMN_COMMENT || col.column_comment || '-'}</td>
+                            <td>${escapeHtml(String(col.COLUMN_DEFAULT ?? col.column_default ?? '-'))}</td>
+                            <td>${escapeHtml(col.COLUMN_COMMENT || col.column_comment || '-')}</td>
+                            <td>
+                                <button class="btn btn-secondary btn-sm" onclick="showColumnModal(${idx})">修改</button>
+                                <button class="btn btn-danger btn-sm" onclick="dropColumnConfirm(${idx})">删除</button>
+                            </td>
                         </tr>`;
                     });
                     html += '</tbody></table></div>';
                     
                     // 索引信息
-                    if (data.indexes && data.indexes.length > 0) {
-                        html += '<div class="structure-section"><h4>索引信息</h4><table class="structure-table"><thead><tr><th>索引名</th><th>类型</th><th>字段</th></tr></thead><tbody>';
-                        data.indexes.forEach(idx => {
+                    structureIndexes = data.indexes || [];
+                    html += '<div class="structure-section"><h4>索引信息 '
+                        + '<button class="btn btn-primary btn-sm" onclick="showIndexModal()" style="margin-left:8px;">+ 新建索引</button>'
+                        + '</h4>';
+                    if (structureIndexes.length > 0) {
+                        html += '<table class="structure-table"><thead><tr><th>索引名</th><th>类型</th><th>字段/定义</th><th>操作</th></tr></thead><tbody>';
+                        structureIndexes.forEach((idx, i) => {
                             html += `<tr>
-                                <td>${idx.INDEX_NAME || idx.indexname}</td>
-                                <td>${idx.INDEX_TYPE || idx.indexdef}</td>
-                                <td>${idx.COLUMNS || idx.indexdef}</td>
+                                <td>${escapeHtml(idx.INDEX_NAME || idx.indexname || '')}</td>
+                                <td>${escapeHtml(idx.INDEX_TYPE || '')}</td>
+                                <td>${escapeHtml(idx.COLUMNS || idx.indexdef || '')}</td>
+                                <td><button class="btn btn-danger btn-sm" onclick="dropIndexConfirm(${i})">删除</button></td>
                             </tr>`;
                         });
-                        html += '</tbody></table></div>';
+                        html += '</tbody></table>';
+                    } else {
+                        html += '<p style="color:#858585;font-size:12px;">暂无索引</p>';
                     }
+                    html += '</div>';
                     
                     // 外键信息
                     if (data.foreignKeys && data.foreignKeys.length > 0) {

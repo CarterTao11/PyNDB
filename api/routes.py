@@ -487,6 +487,83 @@ def update_table_cell():
     return jsonify(result)
 
 
+@api.route('/table/add-column', methods=['POST'])
+def add_table_column():
+    """添加字段"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    table = data.get('table')
+    spec = data.get('column') or {}
+    if not conn_id or not table or not spec.get('name'):
+        return jsonify({'success': False, 'error': '缺少参数'}), 400
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接数据库'}), 400
+    return jsonify(db.add_column(table, spec))
+
+
+@api.route('/table/modify-column', methods=['POST'])
+def modify_table_column():
+    """修改字段 (类型/长度/可空/默认值/注释/改名)"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    table = data.get('table')
+    old_name = data.get('oldName')
+    spec = data.get('column') or {}
+    if not conn_id or not table or not old_name or not spec.get('name'):
+        return jsonify({'success': False, 'error': '缺少参数'}), 400
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接数据库'}), 400
+    return jsonify(db.modify_column(table, old_name, spec))
+
+
+@api.route('/table/drop-column', methods=['POST'])
+def drop_table_column():
+    """删除字段"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    table = data.get('table')
+    column = data.get('column')
+    if not conn_id or not table or not column:
+        return jsonify({'success': False, 'error': '缺少参数'}), 400
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接数据库'}), 400
+    return jsonify(db.drop_column(table, column))
+
+
+@api.route('/table/create-index', methods=['POST'])
+def create_table_index():
+    """新建索引"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    table = data.get('table')
+    spec = data.get('index') or {}
+    if not conn_id or not table:
+        return jsonify({'success': False, 'error': '缺少参数'}), 400
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接数据库'}), 400
+    return jsonify(db.create_index(table, spec))
+
+
+@api.route('/table/drop-index', methods=['POST'])
+def drop_table_index():
+    """删除索引"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    table = data.get('table')
+    name = data.get('name')
+    schema = data.get('schema')
+    if not conn_id or not table or not name:
+        return jsonify({'success': False, 'error': '缺少参数'}), 400
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接数据库'}), 400
+    return jsonify(db.drop_index(table, name, schema))
+
+
 # ==================== 导出 ====================
 
 @api.route('/export/csv', methods=['POST'])

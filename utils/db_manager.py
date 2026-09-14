@@ -11,8 +11,11 @@ import socket
 import threading
 import io
 import os
+import re
 import time
 import logging
+from datetime import datetime as _dt, date as _date, time as _time, timedelta as _td
+from decimal import Decimal
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -329,6 +332,27 @@ class DatabaseManager:
                 return str(row[0]) if row else ''
         return ''
     
+    @staticmethod
+    def _json_safe(v: Any) -> Any:
+        """驱动返回对象 -> JSON友好值: datetime 统一为 yyyy-MM-dd HH:mm:ss 显示"""
+        if isinstance(v, _dt):
+            return v.strftime('%Y-%m-%d %H:%M:%S')
+        if isinstance(v, _date):
+            return v.strftime('%Y-%m-%d')
+        if isinstance(v, _time):
+            return v.strftime('%H:%M:%S')
+        if isinstance(v, _td):
+            return str(v)
+        if isinstance(v, Decimal):
+            return str(v)
+        if isinstance(v, (bytes, bytearray, memoryview)):
+            b = bytes(v)
+            try:
+                return b.decode('utf-8')
+            except UnicodeDecodeError:
+                return b.hex()
+        return v
+
     def execute_sql(self, sql: str) -> Dict[str, Any]:
         """执行SQL语句"""
         if not self.connection:
@@ -350,7 +374,9 @@ class DatabaseManager:
                         'success': True,
                         'type': 'query',
                         'columns': [desc[0] for desc in cursor.description] if cursor.description else [],
-                        'data': results,
+                        'data': [
+                            {k: self._json_safe(v) for k, v in row.items()} for row in results
+                        ],
                         'rowCount': len(results),
                         'executionMs': execution_ms
                     }
@@ -557,6 +583,10 @@ class DatabaseManager:
             fk_result = self.execute_sql(fk_sql)
             foreign_keys = fk_result['data'] if fk_result['success'] else []
         
+        # 统一补充字段长度展示 (字符长度 / numeric 精度)
+        for row in columns:
+            row['length'] = self._fmt_column_length(row)
+
         return {
             'success': True,
             'table': table_info,
@@ -564,6 +594,21 @@ class DatabaseManager:
             'indexes': indexes,
             'foreignKeys': foreign_keys
         }
+
+    @staticmethod
+    def _fmt_column_length(row: Dict[str, Any]) -> Any:
+        """从 information_schema 行提取字段长度: 字符长度, 或 numeric(精度,小数位)"""
+        for k_char, k_prec, k_scale in (
+            ('CHARACTER_MAXIMUM_LENGTH', 'NUMERIC_PRECISION', 'NUMERIC_SCALE'),
+            ('character_maximum_length', 'numeric_precision', 'numeric_scale'),
+        ):
+            if k_char in row and row[k_char] is not None:
+                return row[k_char]
+            if k_prec in row and row[k_prec] is not None:
+                scale = row.get(k_scale)
+                if scale not in (None, 0):  # 整型 scale=0 不展示无意义精度
+                    return f"{row[k_prec]},{scale}"
+        return None
     
     def get_table_data(self, table_name: str, limit: int = 100, offset: int = 0, 
                        order_by: str = None, order_dir: str = 'ASC') -> Dict[str, Any]:
@@ -608,6 +653,215 @@ class DatabaseManager:
                 self.connection.rollback()
             except Exception:
                 pass
+            return {'success': False, 'error': str(e)}
+
+    # ==================== 表结构修改 (DDL) ====================
+    _IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+    def _qi(self, name: str) -> str:
+        """标识符安全引用 (仅允许常规标识符, 杜绝注入)"""
+        if not self._IDENT_RE.match(name or ''):
+            raise ValueError(f'非法标识符: {name!r}')
+        if self.config.db_type == 'mysql':
+            return '`' + name + '`'
+        return '"' + name + '"'
+
+    @staticmethod
+    def _validate_type(base_type: str, length=None) -> str:
+        """类型白名单校验, 返回规范化类型串 (可带长度/精度, 如 VARCHAR(100) / NUMERIC(10,2))"""
+        t = (base_type or '').strip().upper()
+        if not re.match(r'^[A-Z][A-Z ]*$', t):
+            raise ValueError(f'非法字段类型: {base_type!r}')
+        if length is None or str(length).strip() == '':
+            return t
+        length = str(length).strip()
+        if not re.match(r'^\d+(\s*,\s*\d+)?$', length):
+            raise ValueError(f'非法长度/精度: {length!r} (示例: 100 或 10,2)')
+        return f"{t}({length.replace(' ', '')})"
+
+    @staticmethod
+    def _default_sql(default) -> Optional[str]:
+        """默认值转SQL: 关键字/数字原样, 其余按字符串字面量转义; 空 -> None"""
+        if default is None or str(default).strip() == '':
+            return None
+        d = str(default).strip()
+        kw = d.upper()
+        if kw in ('CURRENT_TIMESTAMP', 'CURRENT_DATE', 'CURRENT_TIME', 'NULL', 'TRUE', 'FALSE'):
+            return kw
+        if re.match(r'^-?\d+(\.\d+)?$', d):
+            return d
+        return "'" + d.replace("'", "''") + "'"
+
+    def _exec_ddl(self, statements: List[str], action: str) -> Dict[str, Any]:
+        try:
+            with self.connection.cursor() as cursor:
+                for sql in statements:
+                    logger.info('DDL(%s): %s', action, sql)
+                    cursor.execute(sql)
+            self.connection.commit()
+            return {'success': True, 'message': f'{action}成功'}
+        except Exception as e:
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass
+            logger.exception('DDL失败(%s)', action)
+            return {'success': False, 'error': str(e)}
+
+    def add_column(self, table_name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """添加字段: spec = {name, type, length, not_null, default, comment}"""
+        try:
+            col = self._qi(spec['name'])
+            type_sql = self._validate_type(spec.get('type'), spec.get('length'))
+            sql = f"ALTER TABLE {self._qi(table_name)} ADD COLUMN {col} {type_sql}"
+            if spec.get('not_null'):
+                sql += ' NOT NULL'
+            dsql = self._default_sql(spec.get('default'))
+            if dsql:
+                sql += f' DEFAULT {dsql}'
+            comment = (spec.get('comment') or '').strip()
+            statements = [sql]
+            if comment:
+                if self.config.db_type == 'mysql':
+                    statements[0] += " COMMENT '" + comment.replace("'", "''") + "'"
+                else:
+                    statements.append(
+                        f"COMMENT ON COLUMN {self._qi(table_name)}.{col} IS '"
+                        + comment.replace("'", "''") + "'"
+                    )
+            return self._exec_ddl(statements, f"添加字段 {spec['name']}")
+        except (ValueError, KeyError) as e:
+            return {'success': False, 'error': str(e)}
+
+    def modify_column(self, table_name: str, old_name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """修改字段: spec = {name(新名), type, length, not_null, default, comment,
+        extra(原自增标记), default_same(默认值未改动), original_default}"""
+        try:
+            old = self._qi(old_name)
+            new_name = (spec.get('name') or old_name).strip()
+            type_sql = self._validate_type(spec.get('type'), spec.get('length'))
+            not_null = bool(spec.get('not_null'))
+            comment = (spec.get('comment') or '').strip()
+            renamed = new_name != old_name
+
+            if self.config.db_type == 'mysql':
+                # MySQL MODIFY/CHANGE 重写整列定义, 未指定 DEFAULT 即清除默认值:
+                # 默认值未改动时用原默认值, 避免误清; 自增标记原样保留
+                default_same = bool(spec.get('default_same'))
+                dsql = self._default_sql(spec.get('original_default')) if default_same \
+                    else self._default_sql(spec.get('default'))
+                if renamed:
+                    sql = f"ALTER TABLE {self._qi(table_name)} CHANGE COLUMN {old} {self._qi(new_name)} {type_sql}"
+                else:
+                    sql = f"ALTER TABLE {self._qi(table_name)} MODIFY COLUMN {old} {type_sql}"
+                if not_null:
+                    sql += ' NOT NULL'
+                if dsql:
+                    sql += f' DEFAULT {dsql}'
+                if 'auto_increment' in (spec.get('extra') or '').lower():
+                    sql += ' AUTO_INCREMENT'
+                if comment:
+                    sql += " COMMENT '" + comment.replace("'", "''") + "'"
+                statements = [sql]
+            else:
+                col = self._qi(new_name)
+                statements = []
+                if renamed:
+                    statements.append(
+                        f"ALTER TABLE {self._qi(table_name)} RENAME COLUMN {old} TO {col}"
+                    )
+                statements.append(
+                    f"ALTER TABLE {self._qi(table_name)} ALTER COLUMN {col} TYPE {type_sql} "
+                    f"USING {col}::{type_sql}"
+                )
+                statements.append(
+                    f"ALTER TABLE {self._qi(table_name)} ALTER COLUMN {col} "
+                    f"{'SET NOT NULL' if not_null else 'DROP NOT NULL'}"
+                )
+                if spec.get('default_same'):
+                    pass  # 默认值未改动, 跳过 (保护 nextval 等序列默认)
+                else:
+                    dsql = self._default_sql(spec.get('default'))
+                    statements.append(
+                        f"ALTER TABLE {self._qi(table_name)} ALTER COLUMN {col} "
+                        + (f'SET DEFAULT {dsql}' if dsql else 'DROP DEFAULT')
+                    )
+                if comment:
+                    statements.append(
+                        f"COMMENT ON COLUMN {self._qi(table_name)}.{col} IS '"
+                        + comment.replace("'", "''") + "'"
+                    )
+            action = f"修改字段 {old_name}" + (f" -> {new_name}" if renamed else "")
+            return self._exec_ddl(statements, action)
+        except (ValueError, KeyError) as e:
+            return {'success': False, 'error': str(e)}
+
+    def drop_column(self, table_name: str, column: str) -> Dict[str, Any]:
+        """删除字段"""
+        try:
+            sql = f"ALTER TABLE {self._qi(table_name)} DROP COLUMN {self._qi(column)}"
+            return self._exec_ddl([sql], f"删除字段 {column}")
+        except ValueError as e:
+            return {'success': False, 'error': str(e)}
+
+    # ==================== 索引管理 (DDL) ====================
+    _INDEX_METHODS = {
+        'mysql': {'BTREE', 'HASH', 'FULLTEXT'},
+        'postgresql': {'btree', 'hash', 'gin', 'gist', 'brin'},
+    }
+
+    def create_index(self, table_name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """新建索引: spec = {name?(空则自动生成), unique?, method?, columns: [{name, dir}]}"""
+        try:
+            cols = spec.get('columns') or []
+            if not cols:
+                return {'success': False, 'error': '请至少选择一个索引字段'}
+            col_parts = []
+            for c in cols:
+                q = self._qi(c.get('name', ''))
+                d = str(c.get('dir') or 'ASC').upper()
+                if d not in ('ASC', 'DESC'):
+                    raise ValueError(f'非法排序方向: {d!r}')
+                col_parts.append(f'{q} {d}')
+
+            unique = bool(spec.get('unique'))
+            method = str(spec.get('method') or '').strip()
+            name = (spec.get('name') or '').strip()
+            if not name:
+                stem = '_'.join(str(c.get('name', '')) for c in cols)
+                name = f'idx_{table_name}_{stem}'
+            if self.config.db_type != 'mysql' and len(name) > 63:
+                name = name[:63]  # PG 标识符上限
+            name_q = self._qi(name)
+
+            if self.config.db_type == 'mysql':
+                if method and method.upper() not in self._INDEX_METHODS['mysql']:
+                    raise ValueError(f'非法索引方法: {method!r}')
+                m = method.upper()
+                prefix = 'UNIQUE ' if unique else ('FULLTEXT ' if m == 'FULLTEXT' else '')
+                using = f' USING {m}' if m in ('BTREE', 'HASH') else ''
+                sql = (f"CREATE {prefix}INDEX {name_q} ON {self._qi(table_name)}"
+                       f"{using} ({', '.join(col_parts)})")
+            else:
+                if method and method.lower() not in self._INDEX_METHODS['postgresql']:
+                    raise ValueError(f'非法索引方法: {method!r}')
+                using = f' USING {method.lower()} ' if method else ' '
+                sql = (f"CREATE {'UNIQUE ' if unique else ''}INDEX {name_q} "
+                       f"ON {self._qi(table_name)}{using}({', '.join(col_parts)})")
+            return self._exec_ddl([sql], f"新建索引 {name}")
+        except ValueError as e:
+            return {'success': False, 'error': str(e)}
+
+    def drop_index(self, table_name: str, index_name: str, schema: str = None) -> Dict[str, Any]:
+        """删除索引 (主键/约束自动创建的索引由数据库拒绝, 需通过约束删除)"""
+        try:
+            if self.config.db_type == 'mysql':
+                sql = f"DROP INDEX {self._qi(index_name)} ON {self._qi(table_name)}"
+            else:
+                schema = schema or 'public'
+                sql = f"DROP INDEX {self._qi(schema)}.{self._qi(index_name)}"
+            return self._exec_ddl([sql], f"删除索引 {index_name}")
+        except ValueError as e:
             return {'success': False, 'error': str(e)}
     
     def create_table(self, table_name: str, columns: List[Dict], 
