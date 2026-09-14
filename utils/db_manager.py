@@ -10,6 +10,7 @@ import paramiko
 import socket
 import threading
 import io
+import json
 import os
 import re
 import time
@@ -351,6 +352,9 @@ class DatabaseManager:
             return str(v)
         if isinstance(v, Decimal):
             return str(v)
+        if isinstance(v, (dict, list)):
+            # PG jsonb/json 由驱动解析为 dict/list, 统一转 JSON 字符串 (中文不转义)
+            return json.dumps(v, ensure_ascii=False, default=str)
         if isinstance(v, (bytes, bytearray, memoryview)):
             b = bytes(v)
             try:

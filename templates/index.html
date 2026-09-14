@@ -322,6 +322,17 @@
         .data-table td:hover { overflow: visible; white-space: normal; }
         .data-table td.editable { cursor: cell; }
         .data-table td.editable:hover { box-shadow: inset 0 0 0 1px #007acc; }
+        .data-table td.json-cell { color: var(--code-kw); cursor: zoom-in; }
+        .data-table td.json-cell:hover { overflow: hidden; white-space: nowrap; }
+        #jsonViewer {
+            display: none; position: fixed; z-index: 300;
+            background: var(--bg-panel); color: var(--text);
+            border: 1px solid var(--border-strong); border-radius: 4px;
+            padding: 8px 10px; font-family: Consolas, 'Courier New', monospace;
+            font-size: 12px; line-height: 1.5; max-width: 560px; max-height: 60vh;
+            overflow: auto; white-space: pre; box-shadow: 0 6px 20px rgba(0,0,0,.5);
+            pointer-events: none;
+        }
         
         /* 表结构面板 */
         .structure-panel { padding: 15px; overflow: auto; }
@@ -1534,6 +1545,14 @@
         }
 
         function renderCellText(td, val) {
+            // 同步 json 悬停标记 (编辑提交后调用)
+            const isJson = isJsonValue(val);
+            td.classList.toggle('json-cell', isJson);
+            if (isJson) {
+                td.dataset.json = val;
+            } else {
+                delete td.dataset.json;
+            }
             if (val === null || val === undefined) {
                 td.innerHTML = '<span class="null">NULL</span>';
             } else {
@@ -1614,6 +1633,51 @@
         }
 
         // 渲染查询结果
+        // ==================== JSON 悬停查看器 ====================
+        let jsonViewerEl = null;
+        function isJsonValue(v) {
+            if (typeof v !== 'string') return false;
+            const t = v.trim();
+            if (t.length > 100000) return false;
+            if (!t.startsWith('{') && !t.startsWith('[')) return false;
+            try { JSON.parse(t); return true; } catch (e) { return false; }
+        }
+        function showJsonViewer(td) {
+            const raw = td.dataset.json;
+            if (!raw) return;
+            if (!jsonViewerEl) {
+                jsonViewerEl = document.createElement('pre');
+                jsonViewerEl.id = 'jsonViewer';
+                document.body.appendChild(jsonViewerEl);
+            }
+            try {
+                jsonViewerEl.textContent = JSON.stringify(JSON.parse(raw), null, 2);
+            } catch (e) {
+                jsonViewerEl.textContent = raw;
+            }
+            jsonViewerEl.style.display = 'block';
+            const rect = td.getBoundingClientRect();
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const w = jsonViewerEl.offsetWidth, h = jsonViewerEl.offsetHeight;
+            let left = rect.right + 8, top = rect.top;
+            if (left + w > vw - 8) left = Math.max(8, rect.left - w - 8);
+            if (left + w > vw - 8) left = 8;
+            if (top + h > vh - 8) top = Math.max(8, vh - h - 8);
+            jsonViewerEl.style.left = left + 'px';
+            jsonViewerEl.style.top = top + 'px';
+        }
+        function hideJsonViewer() {
+            if (jsonViewerEl) jsonViewerEl.style.display = 'none';
+        }
+        document.addEventListener('mouseover', e => {
+            const td = e.target.closest ? e.target.closest('.json-cell') : null;
+            if (td && !(e.relatedTarget && td.contains(e.relatedTarget))) showJsonViewer(td);
+        });
+        document.addEventListener('mouseout', e => {
+            const td = e.target.closest ? e.target.closest('.json-cell') : null;
+            if (td && !(e.relatedTarget && td.contains(e.relatedTarget))) hideJsonViewer();
+        });
+
         function renderQueryResult(result) {
             document.getElementById('resultCount').textContent = `${result.rowCount} 行`;
             document.getElementById('resultTime').textContent = `${result.executionMs}ms`;
@@ -1643,13 +1707,18 @@
                 html += `<tr${editable ? ` data-ri="${ri}"` : ''}>`;
                 result.columns.forEach(col => {
                     const val = row[col];
+                    const isJson = isJsonValue(val);
                     const cellVal = (val === null || val === undefined)
                         ? '<span class="null">NULL</span>'
                         : escapeHtml(val);
+                    const jsonAttr = isJson ? ` data-json="${escapeHtml(val)}"` : '';
                     if (editable) {
-                        html += `<td class="editable" data-col="${escapeHtml(col)}" title="双击编辑" ondblclick="startCellEdit(this)">${cellVal}</td>`;
+                        const cls = isJson ? 'editable json-cell' : 'editable';
+                        html += `<td class="${cls}" data-col="${escapeHtml(col)}" title="双击编辑"${jsonAttr} ondblclick="startCellEdit(this)">${cellVal}</td>`;
                     } else if (val === null || val === undefined) {
                         html += '<td class="null">NULL</td>';
+                    } else if (isJson) {
+                        html += `<td class="json-cell"${jsonAttr}>${cellVal}</td>`;
                     } else {
                         html += `<td>${cellVal}</td>`;
                     }
