@@ -13,6 +13,7 @@
             --scrollbar: #424242; --scrollbar-hover: #4f4f4f;
             --text: #d4d4d4; --text-muted: var(--text-muted); --text-secondary: #cccccc; --text-bright: #ffffff;
             --placeholder: #666666; --selected-bg: #094771;
+            --bg-alt-row: #272729;
             --danger-text: #f48771; --danger-bg: #5a1d1d;
             --success-text: #89d185; --success-bg: #1d3d1d;
             --warn-text: #f1c40f; --warn-bg: #5d4d1d;
@@ -27,6 +28,7 @@
             --scrollbar: #c1c1c1; --scrollbar-hover: #a8a8a8;
             --text: #333333; --text-muted: #888888; --text-secondary: #555555; --text-bright: #1a1a1a;
             --placeholder: #999999; --selected-bg: #cce4f7;
+            --bg-alt-row: #ececec;
             --danger-text: #c0392b; --danger-bg: #fdecea;
             --success-text: #1e7e34; --success-bg: #e8f5e9;
             --warn-text: #9a6700; --warn-bg: #fff8e1;
@@ -116,8 +118,10 @@
             cursor: pointer; 
         }
         .conn-item-actions button:hover { background: var(--bg-input-hover); }
-        .conn-item-actions button.danger:hover { background: #a1260d; }
-        .conn-item-actions button.success:hover { background: #0e7a0e; }
+        .conn-item-actions button.primary-action { border: 1px solid rgba(14,99,156,0.4); }
+        .conn-item-actions button.primary-action:hover { background: #0e639c; color: #fff; }
+        .conn-item-actions button.danger:hover { background: #b3402d; color: #fff; }
+        .conn-item-actions button.success:hover { background: #1b7a3a; color: #fff; }
         
         /* 连接状态 */
         .conn-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -258,14 +262,23 @@
             background: #0e639c; 
             color: #fff; 
             border: none; 
-            border-radius: 2px; 
+            border-radius: 3px; 
             cursor: pointer; 
+            transition: background 0.15s;
         }
         .sql-toolbar button:hover { background: #1177bb; }
+        .sql-toolbar button.primary { background: #0e639c; }
+        .sql-toolbar button.primary:hover { background: #1177bb; }
         .sql-toolbar button.secondary { background: var(--bg-input); color: var(--text); }
         .sql-toolbar button.secondary:hover { background: var(--bg-input-hover); }
-        .sql-toolbar button.danger { background: #a1260d; }
-        .sql-toolbar button.danger:hover { background: #c12e14; }
+        .sql-toolbar button.success { background: #1b7a3a; }
+        .sql-toolbar button.success:hover { background: #269349; }
+        .sql-toolbar button.danger { background: #b3402d; }
+        .sql-toolbar button.danger:hover { background: #c5503b; }
+        .sql-toolbar button.warning { background: #b8942e; }
+        .sql-toolbar button.warning:hover { background: #cba53b; }
+        .sql-toolbar button.info { background: #1a7a8a; }
+        .sql-toolbar button.info:hover { background: #2696aa; }
         .sql-toolbar .divider { width: 1px; height: 20px; background: var(--border); }
         
         .sql-textarea { 
@@ -323,6 +336,7 @@
         .data-table th, .data-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
         .data-table th { background: var(--bg-panel); color: var(--text); position: sticky; top: 0; z-index: 1; }
         .data-table tr:hover { background: var(--bg-row-hover); }
+        .data-table tbody tr:nth-child(even) { background: var(--bg-alt-row); }
         .data-table td.null { color: var(--code-str); font-style: italic; }
         .data-table td:hover { overflow: visible; white-space: normal; }
         .data-table td.editable { cursor: cell; }
@@ -340,18 +354,27 @@
         }
         
         /* 表结构面板 */
-        .structure-panel { padding: 15px; overflow: auto; }
-        .structure-section { margin-bottom: 20px; }
+        .structure-panel { padding: 15px; display: flex; flex-direction: column; gap: 16px; }
+        .structure-section { flex-shrink: 0; overflow: hidden; }
+        .structure-section.scrollable { max-height: 50vh; overflow-y: auto; flex-shrink: 1; }
+        .structure-section.scrollable h4 { 
+            position: sticky; top: 0; z-index: 2;
+            background: var(--bg-main);
+        }
         .structure-section h4 { 
             color: var(--text); 
             font-size: 13px; 
             margin-bottom: 10px; 
-            padding-bottom: 8px; 
-            border-bottom: 1px solid var(--border); 
+            padding: 10px 0 8px 0;
+            border-bottom: 1px solid var(--border);
         }
         .structure-table { width: 100%; border-collapse: collapse; }
         .structure-table th, .structure-table td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; font-size: 12px; }
-        .structure-table th { background: var(--bg-panel); color: var(--text); }
+        .structure-table th { background: var(--bg-panel); color: var(--text); position: sticky; top: 37px; z-index: 1; }
+        .structure-table tbody tr { transition: background 0.1s; }
+        .structure-table tbody tr:hover { background: var(--bg-row-hover); }
+        .structure-table tbody tr:nth-child(even) { background: var(--bg-alt-row); }
+        .structure-table tbody tr:nth-child(even):hover { background: var(--bg-row-hover); }
         
         /* 消息提示 */
         .message { padding: 10px 15px; border-radius: 4px; margin: 10px 15px; font-size: 12px; }
@@ -461,15 +484,19 @@
         }
         
         /* 按钮 */
-        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background 0.15s; }
         .btn-primary { background: #0e639c; color: #fff; }
         .btn-primary:hover { background: #1177bb; }
-        .btn-success { background: #0e7a0e; color: #fff; }
-        .btn-success:hover { background: #128512; }
+        .btn-success { background: #1b7a3a; color: #fff; }
+        .btn-success:hover { background: #269349; }
         .btn-secondary { background: var(--bg-input); color: var(--text-secondary); }
         .btn-secondary:hover { background: var(--bg-input-hover); }
-        .btn-danger { background: #a1260d; color: #fff; }
-        .btn-danger:hover { background: #c12e14; }
+        .btn-danger { background: #b3402d; color: #fff; }
+        .btn-danger:hover { background: #c5503b; }
+        .btn-warning { background: #b8942e; color: #fff; }
+        .btn-warning:hover { background: #cba53b; }
+        .btn-info { background: #1a7a8a; color: #fff; }
+        .btn-info:hover { background: #2696aa; }
         .btn-sm { padding: 4px 10px; font-size: 11px; }
         
         /* 空状态 */
@@ -669,7 +696,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="testConnection()">测试连接</button>
+                <button class="btn btn-warning" onclick="testConnection()">测试连接</button>
                 <button class="btn btn-secondary" onclick="closeConnectionModal()">取消</button>
                 <button class="btn btn-primary" onclick="saveConnection()">保存</button>
             </div>
@@ -726,7 +753,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="previewDDL()">预览 DDL</button>
+                <button class="btn btn-warning" onclick="previewDDL()">预览 DDL</button>
                 <button class="btn btn-secondary" onclick="closeCreateTableModal()">取消</button>
                 <button class="btn btn-success" onclick="createTable()">创建表</button>
             </div>
@@ -902,9 +929,9 @@
                             </div>
                             <div class="conn-item-info">${conn.host}:${conn.port} / ${conn.database_name}</div>
                             <div class="conn-item-actions">
-                                <button onclick="event.stopPropagation(); connectDB(${conn.id})">${isConnected ? '重连' : '连接'}</button>
-                                <button onclick="event.stopPropagation(); editConnection(${conn.id})">编辑</button>
-                                <button onclick="event.stopPropagation(); showCreateTableModal(${conn.id})">建表</button>
+                                <button class="primary-action" onclick="event.stopPropagation(); connectDB(${conn.id})">${isConnected ? '重连' : '连接'}</button>
+                                <button class="secondary" onclick="event.stopPropagation(); editConnection(${conn.id})">编辑</button>
+                                <button class="success" onclick="event.stopPropagation(); showCreateTableModal(${conn.id})">建表</button>
                                 <button class="danger" onclick="event.stopPropagation(); deleteConnection(${conn.id})">删除</button>
                             </div>
                         </div>
@@ -1007,13 +1034,13 @@
                     <div class="content-main">
                         <div class="sql-section" id="sqlSection">
                             <div class="sql-toolbar">
-                                <button onclick="executeSQL()">执行 (Ctrl+Enter)</button>
+                                <button class="primary" onclick="executeSQL()">执行 (Ctrl+Enter)</button>
                                 <button class="secondary" onclick="clearSQL()">清空</button>
-                                <button class="secondary" onclick="loadTableData()">刷新数据</button>
-                                <button class="secondary" onclick="showStructure()">表结构</button>
+                                <button class="info" onclick="loadTableData()">刷新数据</button>
+                                <button class="warning" onclick="showStructure()">表结构</button>
                                 <div class="divider"></div>
-                                <button class="secondary" onclick="exportCSV()">导出CSV</button>
-                                <button class="secondary" onclick="exportJSON()">导出JSON</button>
+                                <button class="success" onclick="exportCSV()">导出CSV</button>
+                                <button class="success" onclick="exportJSON()">导出JSON</button>
                             </div>
                             <textarea class="sql-textarea" id="sqlInput" placeholder="在此输入SQL语句... (选中可只执行选中部分, Ctrl+Enter执行, ↑↓翻历史)"></textarea>
                         </div>
@@ -2024,7 +2051,7 @@
                     structureColumns = data.columns || [];
 
                     // 字段信息
-                    html += '<div class="structure-section"><h4>字段信息 '
+                    html += '<div class="structure-section scrollable"><h4>字段信息 '
                         + '<button class="btn btn-primary btn-sm" onclick="showColumnModal(null)" style="margin-left:8px;">+ 添加字段</button>'
                         + '</h4><table class="structure-table"><thead><tr><th>字段名</th><th>类型</th><th>长度</th><th>可空</th><th>键</th><th>默认值</th><th>注释</th><th>操作</th></tr></thead><tbody>';
                     structureColumns.forEach((col, idx) => {
@@ -2038,7 +2065,7 @@
                             <td>${escapeHtml(String(col.COLUMN_DEFAULT ?? col.column_default ?? '-'))}</td>
                             <td>${escapeHtml(col.COLUMN_COMMENT || col.column_comment || '-')}</td>
                             <td>
-                                <button class="btn btn-secondary btn-sm" onclick="showColumnModal(${idx})">修改</button>
+                                <button class="btn btn-primary btn-sm" onclick="showColumnModal(${idx})">修改</button>
                                 <button class="btn btn-danger btn-sm" onclick="dropColumnConfirm(${idx})">删除</button>
                             </td>
                         </tr>`;
@@ -2047,7 +2074,7 @@
                     
                     // 索引信息
                     structureIndexes = data.indexes || [];
-                    html += '<div class="structure-section"><h4>索引信息 '
+                    html += '<div class="structure-section scrollable"><h4>索引信息 '
                         + '<button class="btn btn-primary btn-sm" onclick="showIndexModal()" style="margin-left:8px;">+ 新建索引</button>'
                         + '</h4>';
                     if (structureIndexes.length > 0) {
@@ -2068,7 +2095,7 @@
                     
                     // 外键信息
                     if (data.foreignKeys && data.foreignKeys.length > 0) {
-                        html += '<div class="structure-section"><h4>外键信息</h4><table class="structure-table"><thead><tr><th>外键名</th><th>字段</th><th>关联表</th><th>关联字段</th></tr></thead><tbody>';
+                        html += '<div class="structure-section scrollable"><h4>外键信息</h4><table class="structure-table"><thead><tr><th>外键名</th><th>字段</th><th>关联表</th><th>关联字段</th></tr></thead><tbody>';
                         data.foreignKeys.forEach(fk => {
                             html += `<tr>
                                 <td>${fk.CONSTRAINT_NAME || fk.constraint_name}</td>
