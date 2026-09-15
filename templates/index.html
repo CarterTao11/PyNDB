@@ -335,13 +335,14 @@
             align-items: center; 
         }
         .result-actions { display: flex; gap: 10px; }
-        .result-content { flex: 1; overflow: auto; padding: 10px; }
+        .result-content { flex: 1; overflow: auto; }
+        .result-content > .empty-state { padding: 30px 20px; }
         
         /* 结果表格 */
         .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
         .data-table th, .data-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
-        .data-table th { background: var(--bg-panel); color: var(--text); position: sticky; top: 0; z-index: 1; }
-        #redisResult .data-table th { position: static; }
+        .data-table th { background: var(--bg-panel); color: var(--text); position: sticky; top: -1px; z-index: 2; }
+        #redisResult .data-table th { top: 0; }
         .data-table tr:hover { background: var(--bg-row-hover); }
         .data-table tbody tr:nth-child(even) { background: var(--bg-alt-row); }
         .data-table td.null { color: var(--code-str); font-style: italic; }
