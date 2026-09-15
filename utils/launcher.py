@@ -82,6 +82,18 @@ def launch(app, default_port: int = 7007):
                f'如需换端口, 请设置环境变量 PORT 后重新启动。')
         sys.exit(1)
 
+    # ---- 启动画面 (仅打包模式且未禁用时显示) ----
+    splash = None
+    if getattr(sys, 'frozen', False) and os.environ.get('PYNDDB_NO_SPLASH') != '1':
+        try:
+            from utils.splash import SplashScreen
+            splash = SplashScreen()
+            splash.show()
+            splash.update_status("正在加载配置...")
+        except Exception as e:
+            logger.warning('启动画面初始化失败: %s', e)
+            splash = None
+
     # ---- 自动打开浏览器 ----
     if os.environ.get('PYNDDB_NO_BROWSER') != '1':
         _open_browser_later(url)
@@ -91,22 +103,37 @@ def launch(app, default_port: int = 7007):
         or os.environ.get('PYNDDB_TRAY') == '1'
     if want_tray:
         try:
-            _run_with_tray(app, port, url)
+            if splash:
+                splash.update_status("正在启动托盘模式...")
+            _run_with_tray(app, port, url, splash)
             return
         except ImportError:
             logger.info('未安装 pystray/pillow, 以普通模式启动 (无托盘图标)')
 
     logger.info('Starting pyNDB on port %s', port)
+    if splash:
+        splash.update_status("服务启动中...")
+    
+    # 启动Flask服务
     app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+    
+    # 关闭启动画面
+    if splash:
+        splash.close()
 
 
-def _run_with_tray(app, port: int, url: str):
+def _run_with_tray(app, port: int, url: str, splash=None):
     """托盘模式: 服务在后台线程, 托盘菜单提供 打开界面/退出"""
     import werkzeug.serving
     srv = werkzeug.serving.make_server('127.0.0.1', port, app, threaded=True)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     logger.info('pyNDB 已后台运行: %s (可从托盘图标退出)', url)
+
+    # 关闭启动画面
+    if splash:
+        splash.close()
+        splash = None
 
     import pystray
     from PIL import Image, ImageDraw
