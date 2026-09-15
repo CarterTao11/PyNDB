@@ -205,6 +205,23 @@ class DatabaseManager:
                 )
             except Exception as e:
                 self._hint_ssh_target(e)
+        elif self.config.db_type == 'redis':
+            try:
+                import redis as redis_module
+                self.connection = redis_module.Redis(
+                    host=db_host,
+                    port=db_port,
+                    username=self.config.username or None,
+                    password=self.config.password or None,
+                    db=int(self.config.database_name) if self.config.database_name else 0,
+                    socket_connect_timeout=10,
+                    decode_responses=True
+                )
+                self.connection.ping()  # 测试连接
+            except Exception as e:
+                if self.config.mode == 'ssh':
+                    self._hint_ssh_target(e)
+                raise
 
         latency_ms = int((time.time() - start_time) * 1000)
         return latency_ms
@@ -324,6 +341,9 @@ class DatabaseManager:
     
     def get_version(self) -> str:
         """获取数据库版本"""
+        if self.config.db_type == 'redis':
+            info = self.connection.info()
+            return f"Redis {info.get('redis_version', '')}"
         if self.config.db_type == 'mysql':
             sql = "SELECT VERSION() as version"
         else:
@@ -442,6 +462,8 @@ class DatabaseManager:
     
     def get_tables(self, database: str = None, schema: str = None) -> List[str]:
         """获取所有表"""
+        if self.config.db_type == 'redis':
+            return []
         if self.config.db_type == 'mysql':
             sql = "SHOW TABLES"
         else:
@@ -967,6 +989,151 @@ class DatabaseManager:
             except:
                 pass
         self._close_ssh_tunnel()
+
+
+class RedisManager:
+    """Redis 管理器 - 封装 Redis 常用操作"""
+
+    def __init__(self, config: DBConfig):
+        self.config = config
+        self.connection = None
+        self.ssh_tunnel = None
+        self._ssh_client = None
+        self.local_port = None
+
+    def connect(self) -> int:
+        """建立 Redis 连接"""
+        import time
+        start_time = time.time()
+
+        # 关闭旧连接
+        if self.connection is not None:
+            self.close()
+
+        # SSH 隧道
+        if self.config.mode == 'ssh':
+            self._create_ssh_tunnel()
+            db_host = '127.0.0.1'
+            db_port = self.local_port
+        else:
+            db_host = self.config.host
+            db_port = self.config.port
+
+        import redis as redis_module
+        self.connection = redis_module.Redis(
+            host=db_host,
+            port=db_port,
+            username=self.config.username or None,
+            password=self.config.password or None,
+            db=int(self.config.database_name) if self.config.database_name else 0,
+            socket_connect_timeout=10,
+            decode_responses=True
+        )
+        self.connection.ping()
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        return latency_ms
+
+    def _create_ssh_tunnel(self):
+        """创建 SSH 隧道 (复用 DatabaseManager 逻辑)"""
+        db_mgr = DatabaseManager(self.config)
+        db_mgr._create_ssh_tunnel()
+        self.ssh_tunnel = db_mgr.ssh_tunnel
+        self._ssh_client = db_mgr._ssh_client
+        self.local_port = db_mgr.local_port
+
+    def test_connection(self) -> dict:
+        """测试连接"""
+        try:
+            latency_ms = self.connect()
+            info = self.info()
+            version = info.get('redis_version', '')
+            self.close()
+            return {
+                'success': True,
+                'serverVersion': f"Redis {version}",
+                'latencyMs': latency_ms,
+                'message': '连接成功'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'message': f'连接失败: {str(e)}'
+            }
+
+    def ping(self) -> bool:
+        """Ping 检查连接"""
+        return self.connection.ping()
+
+    def info(self) -> dict:
+        """获取 Redis 服务器信息"""
+        return self.connection.info()
+
+    def keys(self, pattern: str = '*') -> list:
+        """列出键"""
+        return self.connection.keys(pattern)
+
+    def get_type(self, key: str) -> str:
+        """获取键类型"""
+        return self.connection.type(key)
+
+    def get(self, key: str) -> str:
+        """获取字符串值"""
+        return self.connection.get(key)
+
+    def hgetall(self, key: str) -> dict:
+        """获取 hash 所有字段"""
+        return self.connection.hgetall(key)
+
+    def lrange(self, key: str, start: int = 0, stop: int = -1) -> list:
+        """获取 list"""
+        return self.connection.lrange(key, start, stop)
+
+    def smembers(self, key: str) -> set:
+        """获取 set"""
+        return self.connection.smembers(key)
+
+    def zrange(self, key: str, start: int = 0, stop: int = -1, withscores: bool = False) -> list:
+        """获取 zset"""
+        return self.connection.zrange(key, start, stop, withscores=withscores)
+
+    def set(self, key: str, value: str) -> bool:
+        """设置字符串"""
+        return self.connection.set(key, value)
+
+    def hset(self, key: str, field: str, value: str) -> int:
+        """设置 hash 字段"""
+        return self.connection.hset(key, field, value)
+
+    def delete(self, key: str) -> int:
+        """删除键"""
+        return self.connection.delete(key)
+
+    def execute_command(self, command: str, *args) -> any:
+        """执行任意 Redis 命令"""
+        return self.connection.execute_command(command, *args)
+
+    def close(self):
+        """关闭连接"""
+        if self.connection:
+            try:
+                self.connection.close()
+            except Exception:
+                pass
+            self.connection = None
+        if self.ssh_tunnel:
+            try:
+                self.ssh_tunnel.stop()
+            except Exception:
+                pass
+            self.ssh_tunnel = None
+        if self._ssh_client:
+            try:
+                self._ssh_client.close()
+            except Exception:
+                pass
+            self._ssh_client = None
 
 
 # 连接池管理

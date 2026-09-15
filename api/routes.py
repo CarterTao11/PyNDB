@@ -54,7 +54,10 @@ def create_connection():
     """创建连接"""
     data = request.json
     
-    required = ['name', 'db_type', 'host', 'port', 'username', 'database_name']
+    is_redis = data.get('db_type') == 'redis'
+    required = ['name', 'db_type', 'host', 'port']
+    if not is_redis:
+        required += ['username', 'database_name']
     for field in required:
         if not data.get(field):
             return jsonify({'success': False, 'error': f'缺少必填字段: {field}'}), 400
@@ -609,6 +612,211 @@ def export_csv():
         'content': csv_content,
         'rowCount': result['rowCount']
     })
+
+
+# ==================== Redis 操作 ====================
+
+
+@api.route('/redis/keys', methods=['GET'])
+def redis_keys():
+    """获取 Redis 键列表"""
+    conn_id = request.args.get('connectionId', type=int)
+    pattern = request.args.get('pattern', '*')
+    db = get_active_connection(conn_id)
+    if not db or db.config.db_type != 'redis':
+        return jsonify({'success': False, 'error': '未连接Redis'}), 400
+    try:
+        keys = db.connection.keys(pattern)
+        # 获取每个key的类型和长度
+        result = []
+        for key in keys:
+            key_type = db.connection.type(key)
+            ttl = db.connection.ttl(key)
+            if key_type == 'string':
+                try:
+                    val = db.connection.get(key)
+                    length = len(val or '')
+                except Exception:
+                    length = 0
+            elif key_type == 'list':
+                length = db.connection.llen(key)
+            elif key_type == 'set':
+                length = db.connection.scard(key)
+            elif key_type == 'zset':
+                length = db.connection.zcard(key)
+            elif key_type == 'hash':
+                length = db.connection.hlen(key)
+            else:
+                length = 0
+            result.append({'key': key, 'type': key_type, 'length': length, 'ttl': ttl})
+        return jsonify({'success': True, 'keys': result, 'total': len(result)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/value', methods=['GET'])
+def redis_value():
+    """获取 Redis 键的值"""
+    conn_id = request.args.get('connectionId', type=int)
+    key = request.args.get('key')
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        key_type = db.connection.type(key)
+        value = None
+        if key_type == 'string':
+            try:
+                value = db.connection.get(key)
+            except Exception:
+                value = '(binary data)'
+        elif key_type == 'hash':
+            try:
+                value = db.connection.hgetall(key)
+            except Exception:
+                value = {'(error)': 'binary data'}
+        elif key_type == 'list':
+            try:
+                value = db.connection.lrange(key, 0, -1)
+            except Exception:
+                value = ['(binary data)']
+        elif key_type == 'set':
+            try:
+                value = list(db.connection.smembers(key))
+            except Exception:
+                value = ['(binary data)']
+        elif key_type == 'zset':
+            try:
+                value = db.connection.zrange(key, 0, -1, withscores=True)
+            except Exception:
+                value = []
+        return jsonify({'success': True, 'key': key, 'type': key_type, 'value': value})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/command', methods=['POST'])
+def redis_command():
+    """执行 Redis 命令"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    command = data.get('command', '').strip()
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        import shlex
+        parts = shlex.split(command)
+        if not parts:
+            return jsonify({'success': False, 'error': '命令不能为空'}), 400
+        raw = db.connection.execute_command(*parts)
+        # 结构化返回: 列表/元组作为数组, 方便前端按列表展示
+        def safe(v):
+            if isinstance(v, bytes):
+                try: return v.decode('utf-8')
+                except: return v.hex()
+            if isinstance(v, (list, tuple)):
+                return [safe(x) for x in v]
+            return v
+        result = safe(raw)
+        return jsonify({'success': True, 'result': result, 'command': command, 'is_list': isinstance(result, list)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/set', methods=['POST'])
+def redis_set():
+    """设置 Redis 字符串值"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    key = data.get('key')
+    value = data.get('value')
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        db.connection.set(key, value)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/delete', methods=['POST'])
+def redis_delete():
+    """删除 Redis 键"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    key = data.get('key')
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        db.connection.delete(key)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/ttl', methods=['POST'])
+def redis_set_ttl():
+    """设置 Redis 键过期时间"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    key = data.get('key')
+    ttl = data.get('ttl', -1)
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        if ttl < 0:
+            db.connection.persist(key)
+        else:
+            db.connection.expire(key, ttl)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/flushdb', methods=['POST'])
+def redis_flushdb():
+    """清空当前 Redis 数据库"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        db.connection.flushdb()
+        return jsonify({'success': True, 'message': '当前数据库已清空'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@api.route('/redis/server-info', methods=['GET'])
+def redis_server_info():
+    """获取 Redis 服务器信息"""
+    conn_id = request.args.get('connectionId', type=int)
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        info = db.connection.info()
+        return jsonify({
+            'success': True,
+            'info': {
+                'redis_version': info.get('redis_version', ''),
+                'uptime_in_seconds': info.get('uptime_in_seconds', 0),
+                'connected_clients': info.get('connected_clients', 0),
+                'used_memory_human': info.get('used_memory_human', ''),
+                'total_keys': info.get('db0', {}).get('keys', 0) if 'db0' in info else 0,
+                'os': info.get('os', ''),
+                'arch_bits': info.get('arch_bits', ''),
+                'tcp_port': info.get('tcp_port', ''),
+                'server_mode': info.get('redis_mode', ''),
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 
 @api.route('/export/json', methods=['POST'])
