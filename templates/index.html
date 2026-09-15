@@ -1058,7 +1058,8 @@
                 document.body.style.cursor = 'row-resize';
                 document.body.style.userSelect = 'none';
                 function onMove(ev) {
-                    const h = Math.min(maxH, Math.max(100, startH + (startY - ev.clientY)));
+                    // 下边缘跟随鼠标: 向下拖变高, 向上拖变矮
+                    const h = Math.min(maxH, Math.max(100, startH + (ev.clientY - startY)));
                     section.style.height = h + 'px';
                 }
                 function onUp() {
