@@ -1,0 +1,32 @@
+License and Commercial Use Policy
+This project is released under a dual-licensing model. Subject to the terms set out below, you may choose either of the following ways to use this project.
+
+1. Open Source License (Default Option)
+This project is made available by default under the GNU Affero General Public License, Version 3 (AGPL-3.0).
+
+Subject to full compliance with all terms of the AGPL-3.0, you are free to use, modify, and distribute the source code of this project.
+
+Core obligation of the AGPL-3.0: If you modify this project and make it available to users over a network (for example, as a SaaS service), or if you distribute a modified version, you must provide the corresponding complete source code to all users under the AGPL-3.0 license.
+
+The full text of the AGPL-3.0 is available at: https://www.gnu.org/licenses/agpl-3.0.html
+
+2. Commercial License (Additional Option)
+If you wish to use this project without complying with the open source obligations of the AGPL-3.0 (for example, to use it in a closed-source commercial product, to provide a SaaS service without disclosing source code, or to remove the project's branding), you must first obtain a separate commercial license.
+
+Once a commercial license has been obtained, all restrictions of the AGPL-3.0 (including the source code disclosure obligation) no longer apply to you.
+
+To obtain a commercial license, please contact:
+
+Email: [your contact email]
+
+Other: [your other contact method]
+
+3. Important Restrictions
+Use of this project for commercial purposes is prohibited unless you have obtained a valid commercial license.
+
+Using this project for commercial purposes without a commercial license constitutes a violation of this licensing policy.
+
+The final right of interpretation of this policy belongs to the project maintainer.
+
+4. Contributions
+Unless otherwise expressly agreed, any contribution you submit to this project (for example, a Pull Request) is deemed to be provided under the AGPL-3.0 license. The project maintainer has the right to redistribute your contribution under a commercial license.
