@@ -601,6 +601,7 @@
                             <option value="mysql">MySQL</option>
                             <option value="postgresql">PostgreSQL</option>
                             <option value="redis">Redis</option>
+                            <option value="mongodb">MongoDB</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -769,6 +770,159 @@
         </div>
     </div>
     
+    <!-- 新建MongoDB数据库对话框 -->
+    <div class="modal" id="createMongoDbModal">
+        <div class="modal-content" style="width: 450px;">
+            <div class="modal-header">
+                <span>选择/创建 MongoDB 数据库</span>
+                <span class="close" onclick="closeCreateMongoDbModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>选择已有数据库</label>
+                    <select id="mongoExistingDb" onchange="onMongoDbSelect(this.value)" style="width:100%;padding:8px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">
+                        <option value="">-- 选择已有数据库 --</option>
+                    </select>
+                </div>
+                <div style="text-align:center;margin:10px 0;color:var(--text-muted);">— 或 —</div>
+                <div class="form-group">
+                    <label>创建新数据库</label>
+                    <input type="text" id="mongoNewDbName" placeholder="请输入新数据库名称">
+                </div>
+                <div class="form-group">
+                    <label>初始集合名称 *</label>
+                    <input type="text" id="mongoNewCollName" placeholder="请输入集合名称">
+                    <small style="color: var(--text-muted);">MongoDB 数据库会在创建集合时自动创建</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCreateMongoDbModal()">取消</button>
+                <button class="btn btn-success" onclick="createMongoDatabase()">创建</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MongoDB 索引管理对话框 -->
+    <div class="modal" id="mongoIndexModal">
+        <div class="modal-content" style="width: 600px;">
+            <div class="modal-header">
+                <span>索引管理</span>
+                <span class="close" onclick="closeMongoIndexModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>数据库 / 集合</label>
+                    <div id="mongoIndexInfo" style="color: var(--text-muted); font-size: 12px;"></div>
+                </div>
+                <div style="margin-bottom:15px;">
+                    <div style="font-weight:bold;margin-bottom:8px;">创建新索引</div>
+                    <div style="display:flex;gap:5px;margin-bottom:5px;">
+                        <input type="text" id="mongoIndexKeys" placeholder="字段名:方向 (如: name:1, age:-1)" style="flex:1;padding:8px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:5px;">
+                        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="mongoIndexUnique"> 唯一索引</label>
+                        <input type="text" id="mongoIndexName" placeholder="索引名称(可选)" style="width:150px;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">
+                        <button class="btn btn-success btn-sm" onclick="createMongoIndex()">创建索引</button>
+                    </div>
+                </div>
+                <div style="font-weight:bold;margin-bottom:8px;">现有索引</div>
+                <div id="mongoIndexList" style="max-height:200px;overflow-y:auto;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeMongoIndexModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MongoDB 插入文档对话框 -->
+    <div class="modal" id="mongoInsertModal">
+        <div class="modal-content" style="width: 500px;">
+            <div class="modal-header">
+                <span>插入文档</span>
+                <span class="close" onclick="closeMongoInsertModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>数据库 / 集合</label>
+                    <div id="mongoInsertInfo" style="color: var(--text-muted); font-size: 12px;"></div>
+                </div>
+                <div id="mongoInsertFields" style="max-height:250px;overflow-y:auto;"></div>
+                <button class="btn btn-secondary btn-sm" onclick="addMongoInsertField()" style="margin-top:5px;">+ 添加字段</button>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeMongoInsertModal()">取消</button>
+                <button class="btn btn-success" onclick="executeMongoInsert()">插入</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MongoDB 更新文档对话框 -->
+    <div class="modal" id="mongoUpdateModal">
+        <div class="modal-content" style="width: 500px;">
+            <div class="modal-header">
+                <span>更新文档</span>
+                <span class="close" onclick="closeMongoUpdateModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>数据库 / 集合</label>
+                    <div id="mongoUpdateInfo" style="color: var(--text-muted); font-size: 12px;"></div>
+                </div>
+                <div style="margin-bottom:15px;padding:10px;background:var(--bg-secondary);border-radius:4px;">
+                    <div style="font-weight:bold;margin-bottom:8px;">查询条件</div>
+                    <div id="mongoUpdateQueryFields" style="max-height:100px;overflow-y:auto;"></div>
+                    <button class="btn btn-secondary btn-sm" onclick="addMongoUpdateQueryField()" style="margin-top:5px;">+ 添加查询字段</button>
+                </div>
+                <div style="margin-bottom:15px;padding:10px;background:var(--bg-secondary);border-radius:4px;">
+                    <div style="font-weight:bold;margin-bottom:8px;">更新内容</div>
+                    <div id="mongoUpdateFields" style="max-height:150px;overflow-y:auto;"></div>
+                    <button class="btn btn-secondary btn-sm" onclick="addMongoUpdateField()" style="margin-top:5px;">+ 添加更新字段</button>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-secondary);border-radius:4px;border:1px solid var(--border);">
+                        <input type="checkbox" id="mongoUpdateMany" checked style="width:16px;height:16px;cursor:pointer;"> 
+                        <span style="font-weight:500;">更新多条</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeMongoUpdateModal()">取消</button>
+                <button class="btn btn-warning" onclick="executeMongoUpdate()">更新</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MongoDB 删除文档对话框 -->
+    <div class="modal" id="mongoDeleteModal">
+        <div class="modal-content" style="width: 500px;">
+            <div class="modal-header">
+                <span>删除文档</span>
+                <span class="close" onclick="closeMongoDeleteModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>数据库 / 集合</label>
+                    <div id="mongoDeleteInfo" style="color: var(--text-muted); font-size: 12px;"></div>
+                </div>
+                <div style="margin-bottom:15px;padding:10px;background:var(--bg-secondary);border-radius:4px;">
+                    <div style="font-weight:bold;margin-bottom:8px;">查询条件</div>
+                    <div id="mongoDeleteQueryFields" style="max-height:120px;overflow-y:auto;"></div>
+                    <button class="btn btn-secondary btn-sm" onclick="addMongoDeleteQueryField()" style="margin-top:5px;">+ 添加查询字段</button>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-secondary);border-radius:4px;border:1px solid var(--border);">
+                        <input type="checkbox" id="mongoDeleteMany" style="width:16px;height:16px;cursor:pointer;"> 
+                        <span style="font-weight:500;">删除多条</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeMongoDeleteModal()">取消</button>
+                <button class="btn btn-danger" onclick="executeMongoDelete()">删除</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- 字段编辑对话框 (添加/修改字段) -->
     <div class="modal" id="columnModal">
         <div class="modal-content">
@@ -878,6 +1032,15 @@
         // 初始化
         async function init() {
             await loadConnections();
+            // Ctrl+S 保存修改
+            document.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    if (document.getElementById('mongoInlineTable')) {
+                        saveMongoInlineChanges();
+                    }
+                }
+            });
         }
         
         // 加载连接列表
@@ -940,7 +1103,7 @@
                             <div class="conn-item-actions">
                                 <button class="primary-action" onclick="event.stopPropagation(); connectDB(${conn.id})">${isConnected ? '重连' : '连接'}</button>
                                 <button class="secondary" onclick="event.stopPropagation(); editConnection(${conn.id})">编辑</button>
-                                ${conn.db_type === 'redis' ? '' : '<button class="success" onclick="event.stopPropagation(); showCreateTableModal(' + conn.id + ')">建表</button>'}
+                                ${(conn.db_type === 'redis' || conn.db_type === 'mongodb') ? '' : '<button class="success" onclick="event.stopPropagation(); showCreateTableModal(' + conn.id + ')">建表</button>'}
                                 <button class="danger" onclick="event.stopPropagation(); deleteConnection(${conn.id})">删除</button>
                             </div>
                         </div>
@@ -971,7 +1134,17 @@
                     var oldTree = document.querySelector('.object-tree');
                     if (oldTree) oldTree.remove();
                     renderRedisPanel(connId);
+                } else if (conn.db_type === 'mongodb') {
+                    // MongoDB 界面
+                    var oldTree = document.querySelector('.object-tree');
+                    if (oldTree) oldTree.remove();
+                    renderMongoDBPanel(connId);
                 } else {
+                    // 切换到 SQL 数据库时, 清除 Redis/MongoDB 残留的界面元素
+                    var oldMongoTree = document.querySelector('.object-tree');
+                    if (oldMongoTree) oldMongoTree.remove();
+                    var oldMongoMain = document.querySelector('.content-main');
+                    if (oldMongoMain) oldMongoMain.remove();
                     renderObjectTree(connId);
                     renderContentPanel(connId);
                 }
@@ -1429,6 +1602,758 @@
                 + '<tr><td>SMEMBERS</td><td>SMEMBERS set</td><td>\u83b7\u53d6\u6240\u6709\u96c6\u5408\u6210\u5458</td></tr>'
                 + '<tr><td>FLUSHDB</td><td>FLUSHDB</td><td>\u6e05\u7a7a\u5f53\u524d\u6570\u636e\u5e93</td></tr>'
                 + '</tbody></table></div>';
+        }
+        
+        // ==================== MongoDB 界面 ====================
+        var mongoCurrentDb = '';
+        var mongoCurrentColl = '';
+        
+        function renderMongoDBPanel(connId) {
+            const panel = document.getElementById('contentPanel');
+            panel.querySelectorAll(':scope > .empty-state').forEach(el => el.remove());
+            const existingTree = panel.querySelector('.object-tree');
+            const existingMain = panel.querySelector('.content-main');
+            if (existingTree) existingTree.remove();
+            if (existingMain) existingMain.remove();
+            
+            panel.insertAdjacentHTML('beforeend', `
+                <div class="object-tree" style="width:200px;">
+                    <div class="object-tree-header">
+                        <span>📁 数据库</span>
+                        <button class="btn btn-sm btn-secondary" onclick="loadMongoDatabases(${connId})">刷新</button>
+                    </div>
+                    <div class="object-list" id="mongoDbList">
+                        <div class="empty-state" style="padding:20px;"><div>点击刷新加载数据库</div></div>
+                    </div>
+                </div>
+                <div class="content-main">
+                    <div class="sql-section">
+                        <div class="sql-toolbar">
+                            <button class="primary" onclick="executeMongoFind(${connId})">查询</button>
+                            <button class="success" onclick="showMongoInsertModal(${connId})">插入</button>
+                            <button class="warning" onclick="showMongoUpdateModal(${connId})">更新</button>
+                            <button class="danger" onclick="showMongoDeleteModal(${connId})">删除</button>
+                            <div class="divider"></div>
+                            <button class="info" onclick="loadMongoServerInfo(${connId})">服务器信息</button>
+                            <button class="secondary" onclick="showMongoCreateDbModal(${connId})">创建数据库</button>
+                            <button class="secondary" onclick="showMongoIndexModal(${connId})">索引</button>
+                        </div>
+                        <div style="display:flex;gap:10px;margin-bottom:10px;">
+                            <input type="text" id="mongoQuery" placeholder="查询条件 (如: {name: 'tom'})" 
+                                   style="flex:1;padding:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);">
+                            <input type="number" id="mongoLimit" placeholder="数量" value="100" 
+                                   style="width:80px;padding:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);">
+                        </div>
+                    </div>
+                    <div class="result-section" style="flex:1;">
+                        <div class="result-header" style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <span id="mongoResultInfo">选择数据库和集合</span>
+                                <span style="margin:0 8px;color:var(--text-muted);">|</span>
+                                <span id="mongoResultCount"></span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span id="mongoSuccessMsg" style="color:var(--success-text);font-weight:500;"></span>
+                                <div id="mongoInlineButtons" style="display:none;">
+                                    <button class="btn btn-success btn-sm" onclick="addMongoInlineRow()">+ 添加行</button>
+                                    <button class="btn btn-primary btn-sm" onclick="saveMongoInlineChanges()" style="margin-left:5px;">保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-content" id="mongoResult">
+                            <div class="empty-state"><div>从左侧选择数据库和集合</div></div>
+                        </div>
+                    </div>
+                </div>
+            `);
+            loadMongoDatabases(connId);
+        }
+        
+        async function loadMongoDatabases(connId) {
+            const list = document.getElementById('mongoDbList');
+            if (!list) return;
+            list.innerHTML = '<div class="loading">加载中</div>';
+            try {
+                const res = await fetch('/api/v1/mongodb/databases?connectionId=' + connId);
+                const data = await res.json();
+                if (!data.success) { list.innerHTML = '<div class="message error">' + data.error + '</div>'; return; }
+                list.innerHTML = data.databases.map(function(db) {
+                    return '<div class="object-item" onclick="loadMongoCollections(' + connId + ', \'' + db + '\', this)">'
+                        + '<span class="icon">📁</span><span>' + db + '</span></div>';
+                }).join('');
+            } catch(e) {
+                list.innerHTML = '<div class="message error">' + e.message + '</div>';
+            }
+        }
+        
+        async function loadMongoCollections(connId, dbName, el) {
+            mongoCurrentDb = dbName;
+            // 高亮选中
+            document.querySelectorAll('#mongoDbList .object-item').forEach(function(i) { i.classList.remove('active'); });
+            if (el) el.classList.add('active');
+            
+            document.getElementById('mongoResultInfo').textContent = '数据库: ' + dbName;
+            const list = document.getElementById('mongoDbList');
+            // 添加集合列表
+            const existingColl = document.getElementById('mongoCollList');
+            if (existingColl) existingColl.remove();
+            
+            try {
+                const res = await fetch('/api/v1/mongodb/collections?connectionId=' + connId + '&database=' + encodeURIComponent(dbName));
+                const data = await res.json();
+                if (!data.success) { document.getElementById('mongoResult').innerHTML = '<div class="message error">' + data.error + '</div>'; return; }
+                
+                const collHtml = '<div id="mongoCollList" style="padding-left:15px;">' 
+                    + data.collections.map(function(c) {
+                        return '<div class="object-item" onclick="event.stopPropagation(); selectMongoCollection(' + connId + ', \'' + dbName + '\', \'' + c + '\', this)">'
+                            + '<span class="icon">📋</span><span>' + c + '</span></div>';
+                    }).join('') + '</div>';
+                
+                const dbItem = el.nextElementSibling;
+                if (dbItem && dbItem.id === 'mongoCollList') dbItem.remove();
+                el.insertAdjacentHTML('afterend', collHtml);
+            } catch(e) {
+                document.getElementById('mongoResult').innerHTML = '<div class="message error">' + e.message + '</div>';
+            }
+        }
+        
+        function selectMongoCollection(connId, dbName, collName, el) {
+            currentMongoConnId = connId;
+            mongoCurrentColl = collName;
+            document.querySelectorAll('#mongoCollList .object-item').forEach(function(i) { i.classList.remove('active'); });
+            if (el) el.classList.add('active');
+            document.getElementById('mongoResultInfo').textContent = dbName + '.' + collName;
+            executeMongoFind(connId);
+        }
+        
+        async function executeMongoFind(connId) {
+            if (!mongoCurrentDb || !mongoCurrentColl) {
+                document.getElementById('mongoResult').innerHTML = '<div class="message warning">请先选择数据库和集合</div>';
+                return;
+            }
+            const queryStr = document.getElementById('mongoQuery')?.value || '{}';
+            const limit = parseInt(document.getElementById('mongoLimit')?.value) || 100;
+            
+            try {
+                const res = await fetch('/api/v1/mongodb/find', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        connectionId: connId,
+                        database: mongoCurrentDb,
+                        collection: mongoCurrentColl,
+                        query: queryStr,
+                        limit: limit
+                    })
+                });
+                
+                // 从 header 获取字段列表
+                const fieldsHeader = res.headers.get('X-Mongo-Fields');
+                if (fieldsHeader) {
+                    mongoSchemaFields = fieldsHeader.split(',').filter(f => f);
+                }
+                
+                const data = await res.json();
+                if (!data.success) { document.getElementById('mongoResult').innerHTML = '<div class="message error">' + data.error + '</div>'; return; }
+                
+                document.getElementById('mongoResultCount').textContent = data.total + ' 条';
+                if (!data.documents || data.documents.length === 0) {
+                    document.getElementById('mongoResult').innerHTML = '<div class="message">(无数据)</div>';
+                    document.getElementById('mongoInlineButtons').style.display = 'none';
+                    return;
+                }
+                
+                // 使用 header 中的字段列表作为表头
+                const keys = mongoSchemaFields && mongoSchemaFields.length > 0 ? mongoSchemaFields : Object.keys(data.documents[0]);
+                // Show inline buttons in header
+                document.getElementById('mongoInlineButtons').style.display = '';
+                var html = '<table class="data-table" id="mongoInlineTable"><thead><tr>';
+                html += keys.map(function(k) { return '<th>' + k + '</th>'; }).join('');
+                html += '<th style="width:50px;">操作</th></tr></thead><tbody>';
+                data.documents.forEach(function(doc) {
+                    html += '<tr data-id="' + (doc._id || '') + '">';
+                    html += keys.map(function(k) {
+                        var val = doc[k];
+                        if (val === null) return '<td class="null" contenteditable="true">(null)</td>';
+                        if (typeof val === 'object') return '<td contenteditable="true"><pre style="margin:0;font-size:11px;">' + escapeHtml(JSON.stringify(val, null, 2)) + '</pre></td>';
+                        return '<td contenteditable="true">' + escapeHtml(String(val)) + '</td>';
+                    }).join('');
+                    html += '<td><button class="btn btn-danger btn-sm" onclick="deleteMongoInlineRow(this)">×</button></td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('mongoResult').innerHTML = html;
+            } catch(e) {
+                document.getElementById('mongoResult').innerHTML = '<div class="message error">' + e.message + '</div>';
+            }
+        }
+        
+        function addMongoInlineRow() {
+            const table = document.getElementById('mongoInlineTable');
+            if (!table) return;
+            const thead = table.querySelector('thead tr');
+            const keys = [];
+            thead.querySelectorAll('th').forEach(function(th, i) {
+                if (i < thead.querySelectorAll('th').length - 1) keys.push(th.textContent);
+            });
+            const tbody = table.querySelector('tbody');
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-id', '');  // Empty ID means new row
+            tr.style.background = 'var(--bg-secondary)';
+            keys.forEach(function(k) {
+                const td = document.createElement('td');
+                td.setAttribute('contenteditable', 'true');
+                td.textContent = '';
+                tr.appendChild(td);
+            });
+            const td = document.createElement('td');
+            td.innerHTML = '<button class="btn btn-danger btn-sm" onclick="deleteMongoInlineRow(this)">×</button>';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+        
+        function deleteMongoInlineRow(btn) {
+            const tr = btn.closest('tr');
+            const id = tr.getAttribute('data-id');
+            if (!id) {
+                tr.remove();
+                return;
+            }
+            // Delete from database - use ObjectId
+            fetch('/api/v1/mongodb/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: JSON.stringify({_id: id}), many: false})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    tr.remove();
+                    const msgEl = document.getElementById('mongoSuccessMsg');
+                    msgEl.textContent = '删除成功!';
+                    setTimeout(function() {
+                        msgEl.textContent = '';
+                    }, 2000);
+                    executeMongoFind(currentMongoConnId);
+                } else {
+                    alert('删除失败: ' + data.error);
+                }
+            });
+        }
+        
+        function saveMongoInlineChanges() {
+            const table = document.getElementById('mongoInlineTable');
+            if (!table) return;
+            const thead = table.querySelector('thead tr');
+            const keys = [];
+            thead.querySelectorAll('th').forEach(function(th, i) {
+                if (i < thead.querySelectorAll('th').length - 1) keys.push(th.textContent);
+            });
+            const tbody = table.querySelector('tbody');
+            const rows = tbody.querySelectorAll('tr');
+            const promises = [];
+            rows.forEach(function(tr) {
+                const id = tr.getAttribute('data-id');
+                const cells = tr.querySelectorAll('td');
+                const doc = {};
+                keys.forEach(function(k, i) {
+                    let val = cells[i].textContent;
+                    if (k === '_id') return;  // Skip _id for new documents
+                    if (val === '(null)') { doc[k] = null; return; }
+                    try { val = JSON.parse(val); } catch(e) {}
+                    doc[k] = val;
+                });
+                if (!id) {
+                    // New row - insert
+                    promises.push(fetch('/api/v1/mongodb/insert', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, document: JSON.stringify(doc)})
+                    }).then(function(r) { return r.json(); }));
+                } else {
+                    // Existing row - update by _id
+                    promises.push(fetch('/api/v1/mongodb/update', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: JSON.stringify({_id: id}), update: JSON.stringify({$set: doc}), many: false})
+                    }).then(function(r) { return r.json(); }));
+                }
+            });
+            Promise.all(promises).then(function(results) {
+                const errors = results.filter(function(r) { return !r.success; });
+                const successes = results.filter(function(r) { return r.success; });
+                if (errors.length > 0) {
+                    alert('部分操作失败: ' + errors.map(function(e) { return e.error; }).join(', '));
+                } else if (successes.length > 0) {
+                    const msgEl = document.getElementById('mongoSuccessMsg');
+                    msgEl.textContent = '保存成功! ' + successes.length + ' 条记录';
+                    setTimeout(function() {
+                        msgEl.textContent = '';
+                    }, 3000);
+                }
+                executeMongoFind(currentMongoConnId);
+            });
+        }
+        
+        function showMongoInsertModal(connId) {
+            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            document.getElementById('mongoInsertInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
+            document.getElementById('mongoInsertFields').innerHTML = '';
+            mongoSchemaFields = [];  // 重置
+            // 加载字段结构
+            fetch('/api/v1/mongodb/schema?connectionId=' + connId + '&database=' + encodeURIComponent(mongoCurrentDb) + '&collection=' + encodeURIComponent(mongoCurrentColl))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.fields && data.fields.length > 0) {
+                        mongoSchemaFields = data.fields;
+                    }
+                    // 加载完成后添加字段行（这样下拉才有选项）
+                    addMongoInsertField();
+                });
+            document.getElementById('mongoInsertModal').classList.add('show');
+        }
+        
+        var mongoSchemaFields = [];  // 存储当前集合的字段列表
+        
+        function addMongoInsertField() {
+            var container = document.getElementById('mongoInsertFields');
+            var fieldOptions = mongoSchemaFields.map(function(f) { return '<option value="' + f + '">'; }).join('');
+            var uniqueId = 'mongoFieldOptions_' + Date.now();
+            var html = '<div style="display:flex;gap:5px;margin-bottom:5px;">';
+            html += '<input type="text" class="mongo-field-name" list="' + uniqueId + '" placeholder="字段名" style="width:120px;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<datalist id="' + uniqueId + '">' + fieldOptions + '</datalist>';
+            html += '<input type="text" class="mongo-field-value" placeholder="值" style="flex:1;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">×</button></div>';
+            container.insertAdjacentHTML('beforeend', html);
+        }
+        
+        function closeMongoInsertModal() {
+            document.getElementById('mongoInsertModal').classList.remove('show');
+        }
+        
+        function executeMongoInsert() {
+            // 从字段输入构建JSON
+            const fieldNames = document.querySelectorAll('#mongoInsertFields .mongo-field-name');
+            const fieldValues = document.querySelectorAll('#mongoInsertFields .mongo-field-value');
+            var doc = {};
+            for (var i = 0; i < fieldNames.length; i++) {
+                var name = fieldNames[i].value.trim();
+                var value = fieldValues[i].value;
+                if (name) {
+                    // 尝试解析值
+                    try { value = JSON.parse(value); } catch(e) {}
+                    doc[name] = value;
+                }
+            }
+            if (Object.keys(doc).length === 0) { alert('请至少填写一个字段'); return; }
+            var docStr = JSON.stringify(doc);
+            
+            fetch('/api/v1/mongodb/insert', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, document: docStr})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                const infoEl = document.getElementById('mongoResultInfo');
+                if (data.success) { 
+                    closeMongoInsertModal();
+                    infoEl.textContent = '插入成功! ID: ' + (data.inserted_id || data.inserted_ids);
+                    infoEl.style.color = 'var(--success-text)';
+                    executeMongoFind(currentMongoConnId); 
+                    // 重新加载字段结构
+                    fetch('/api/v1/mongodb/schema?connectionId=' + currentMongoConnId + '&database=' + encodeURIComponent(mongoCurrentDb) + '&collection=' + encodeURIComponent(mongoCurrentColl))
+                        .then(function(r) { return r.json(); })
+                        .then(function(schemaData) {
+                            if (schemaData.success && schemaData.fields) {
+                                mongoSchemaFields = schemaData.fields;
+                                // 更新现有行的datalist选项
+                                var container = document.getElementById('mongoInsertFields');
+                                var rows = container.querySelectorAll('.mongo-field-name');
+                                var fieldOptions = mongoSchemaFields.map(function(f) { return '<option value="' + f + '">'; }).join('');
+                                rows.forEach(function(input) {
+                                    var datalistId = input.getAttribute('list');
+                                    var datalist = document.getElementById(datalistId);
+                                    if (datalist) {
+                                        datalist.innerHTML = fieldOptions;
+                                    }
+                                });
+                            }
+                        });
+                    // 3秒后恢复
+                    setTimeout(function() {
+                        infoEl.textContent = mongoCurrentDb + '.' + mongoCurrentColl;
+                        infoEl.style.color = '';
+                    }, 3000);
+                } else { 
+                    document.getElementById('mongoResult').innerHTML = '<div class="message error">插入失败: ' + data.error + '</div>';
+                }
+            });
+        }
+        
+        function showMongoUpdateModal(connId) {
+            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            document.getElementById('mongoUpdateInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
+            document.getElementById('mongoUpdateMany').checked = true;
+            document.getElementById('mongoUpdateFields').innerHTML = '';
+            document.getElementById('mongoUpdateQueryFields').innerHTML = '';
+            // 加载字段结构
+            fetch('/api/v1/mongodb/schema?connectionId=' + connId + '&database=' + encodeURIComponent(mongoCurrentDb) + '&collection=' + encodeURIComponent(mongoCurrentColl))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.fields && data.fields.length > 0) {
+                        mongoSchemaFields = data.fields;
+                    }
+                    // 加载完成后添加字段行
+                    addMongoUpdateField();
+                    addMongoUpdateQueryField();
+                });
+            document.getElementById('mongoUpdateModal').classList.add('show');
+        }
+        
+        function addMongoUpdateQueryField() {
+            var container = document.getElementById('mongoUpdateQueryFields');
+            var fieldOptions = mongoSchemaFields.map(function(f) { return '<option value="' + f + '">'; }).join('');
+            var uniqueId = 'mongoQueryFieldOptions_' + Date.now();
+            var html = '<div style="display:flex;gap:5px;margin-bottom:5px;">';
+            html += '<input type="text" class="mongo-query-field-name" list="' + uniqueId + '" placeholder="字段名" style="width:120px;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<datalist id="' + uniqueId + '">' + fieldOptions + '</datalist>';
+            html += '<input type="text" class="mongo-query-field-value" placeholder="值" style="flex:1;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">×</button></div>';
+            container.insertAdjacentHTML('beforeend', html);
+        }
+        
+        function addMongoUpdateField() {
+            var container = document.getElementById('mongoUpdateFields');
+            var fieldOptions = mongoSchemaFields.map(function(f) { return '<option value="' + f + '">'; }).join('');
+            var uniqueId = 'mongoUpdateFieldOptions_' + Date.now();
+            var html = '<div style="display:flex;gap:5px;margin-bottom:5px;">';
+            html += '<input type="text" class="mongo-update-field-name" list="' + uniqueId + '" placeholder="字段名" style="width:120px;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<datalist id="' + uniqueId + '">' + fieldOptions + '</datalist>';
+            html += '<input type="text" class="mongo-update-field-value" placeholder="新值" style="flex:1;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">×</button></div>';
+            container.insertAdjacentHTML('beforeend', html);
+        }
+        
+        function closeMongoUpdateModal() {
+            document.getElementById('mongoUpdateModal').classList.remove('show');
+        }
+        
+        function executeMongoUpdate() {
+            const many = document.getElementById('mongoUpdateMany').checked;
+            
+            // 从字段输入构建查询条件
+            const queryFieldNames = document.querySelectorAll('#mongoUpdateQueryFields .mongo-query-field-name');
+            const queryFieldValues = document.querySelectorAll('#mongoUpdateQueryFields .mongo-query-field-value');
+            var queryData = {};
+            for (var i = 0; i < queryFieldNames.length; i++) {
+                var name = queryFieldNames[i].value.trim();
+                var value = queryFieldValues[i].value;
+                if (name) {
+                    try { value = JSON.parse(value); } catch(e) {}
+                    queryData[name] = value;
+                }
+            }
+            if (Object.keys(queryData).length === 0) { alert('请至少填写一个查询条件'); return; }
+            var query = JSON.stringify(queryData);
+            
+            // 从字段输入构建更新操作
+            const fieldNames = document.querySelectorAll('#mongoUpdateFields .mongo-update-field-name');
+            const fieldValues = document.querySelectorAll('#mongoUpdateFields .mongo-update-field-value');
+            var setData = {};
+            for (var i = 0; i < fieldNames.length; i++) {
+                var name = fieldNames[i].value.trim();
+                var value = fieldValues[i].value;
+                if (name) {
+                    try { value = JSON.parse(value); } catch(e) {}
+                    setData[name] = value;
+                }
+            }
+            if (Object.keys(setData).length === 0) { alert('请至少填写一个更新字段'); return; }
+            var update = JSON.stringify({$set: setData});
+            
+            fetch('/api/v1/mongodb/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: query, update: update, many: many})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                const infoEl = document.getElementById('mongoResultInfo');
+                if (data.success) { 
+                    closeMongoUpdateModal();
+                    infoEl.textContent = '更新成功! 匹配: ' + data.matched_count + ', 修改: ' + data.modified_count;
+                    infoEl.style.color = 'var(--success-text)';
+                    executeMongoFind(currentMongoConnId); 
+                    // 3秒后恢复
+                    setTimeout(function() {
+                        infoEl.textContent = mongoCurrentDb + '.' + mongoCurrentColl;
+                        infoEl.style.color = '';
+                    }, 3000);
+                } else { 
+                    document.getElementById('mongoResult').innerHTML = '<div class="message error">更新失败: ' + data.error + '</div>';
+                }
+            });
+        }
+        
+        function showMongoDeleteModal(connId) {
+            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            document.getElementById('mongoDeleteInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
+            document.getElementById('mongoDeleteMany').checked = false;
+            document.getElementById('mongoDeleteQueryFields').innerHTML = '';
+            // 加载字段结构
+            fetch('/api/v1/mongodb/schema?connectionId=' + connId + '&database=' + encodeURIComponent(mongoCurrentDb) + '&collection=' + encodeURIComponent(mongoCurrentColl))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.fields && data.fields.length > 0) {
+                        mongoSchemaFields = data.fields;
+                    }
+                    // 加载完成后添加字段行
+                    addMongoDeleteQueryField();
+                });
+            document.getElementById('mongoDeleteModal').classList.add('show');
+        }
+        
+        function addMongoDeleteQueryField() {
+            var container = document.getElementById('mongoDeleteQueryFields');
+            var fieldOptions = mongoSchemaFields.map(function(f) { return '<option value="' + f + '">'; }).join('');
+            var uniqueId = 'mongoDeleteFieldOptions_' + Date.now();
+            var html = '<div style="display:flex;gap:5px;margin-bottom:5px;">';
+            html += '<input type="text" class="mongo-delete-field-name" list="' + uniqueId + '" placeholder="字段名" style="width:120px;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<datalist id="' + uniqueId + '">' + fieldOptions + '</datalist>';
+            html += '<input type="text" class="mongo-delete-field-value" placeholder="值" style="flex:1;padding:5px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+            html += '<button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">×</button></div>';
+            container.insertAdjacentHTML('beforeend', html);
+        }
+        
+        function closeMongoDeleteModal() {
+            document.getElementById('mongoDeleteModal').classList.remove('show');
+        }
+        
+        function executeMongoDelete() {
+            const many = document.getElementById('mongoDeleteMany').checked;
+            
+            // 从字段输入构建查询条件
+            const queryFieldNames = document.querySelectorAll('#mongoDeleteQueryFields .mongo-delete-field-name');
+            const queryFieldValues = document.querySelectorAll('#mongoDeleteQueryFields .mongo-delete-field-value');
+            var queryData = {};
+            for (var i = 0; i < queryFieldNames.length; i++) {
+                var name = queryFieldNames[i].value.trim();
+                var value = queryFieldValues[i].value;
+                if (name) {
+                    try { value = JSON.parse(value); } catch(e) {}
+                    queryData[name] = value;
+                }
+            }
+            if (Object.keys(queryData).length === 0) { alert('请至少填写一个查询条件'); return; }
+            if (!confirm('确定要删除吗?')) return;
+            
+            var query = JSON.stringify(queryData);
+            
+            fetch('/api/v1/mongodb/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: query || {}, many: many})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                const infoEl = document.getElementById('mongoResultInfo');
+                if (data.success) { 
+                    closeMongoDeleteModal();
+                    infoEl.textContent = '删除成功! 删除: ' + data.deleted_count + ' 条';
+                    infoEl.style.color = 'var(--success-text)';
+                    executeMongoFind(currentMongoConnId); 
+                    // 3秒后恢复
+                    setTimeout(function() {
+                        infoEl.textContent = mongoCurrentDb + '.' + mongoCurrentColl;
+                        infoEl.style.color = '';
+                    }, 3000);
+                } else { 
+                    document.getElementById('mongoResult').innerHTML = '<div class="message error">删除失败: ' + data.error + '</div>';
+                }
+            });
+        }
+        
+        async function loadMongoServerInfo(connId) {
+            const resultDiv = document.getElementById('mongoResult');
+            try {
+                const res = await fetch('/api/v1/mongodb/server-info?connectionId=' + connId);
+                const data = await res.json();
+                if (!data.success) { resultDiv.innerHTML = '<div class="message error">' + data.error + '</div>'; return; }
+                const info = data.info;
+                document.getElementById('mongoResultInfo').textContent = 'MongoDB 服务器信息';
+                resultDiv.innerHTML = '<table class="data-table"><thead><tr><th>参数</th><th>值</th></tr></thead><tbody>'
+                    + '<tr><td>版本</td><td>' + info.version + '</td></tr>'
+                    + '<tr><td>Git版本</td><td>' + info.gitVersion + '</td></tr>'
+                    + '<tr><td>最大BSON大小</td><td>' + info.maxBsonObjectSize + '</td></tr>'
+                    + '</tbody></table>';
+            } catch(e) {
+                resultDiv.innerHTML = '<div class="message error">' + e.message + '</div>';
+            }
+        }
+        
+        let currentMongoConnId = null;
+        
+        function showMongoCreateDbModal(connId) {
+            currentMongoConnId = connId;
+            document.getElementById('createMongoDbModal').classList.add('show');
+            document.getElementById('mongoNewDbName').value = '';
+            document.getElementById('mongoNewCollName').value = '';
+            
+            // 加载已有数据库列表
+            const select = document.getElementById('mongoExistingDb');
+            select.innerHTML = '<option value="">-- 加载中 --</option>';
+            fetch('/api/v1/mongodb/databases?connectionId=' + connId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        var html = '<option value="">-- 选择已有数据库 --</option>';
+                        data.databases.forEach(function(db) {
+                            html += '<option value="' + db + '">' + db + '</option>';
+                        });
+                        select.innerHTML = html;
+                    } else {
+                        select.innerHTML = '<option value="">加载失败</option>';
+                    }
+                });
+        }
+        
+        function onMongoDbSelect(dbName) {
+            if (dbName) {
+                // 选择已有数据库后, 加载该数据库的集合
+                document.getElementById('mongoNewDbName').value = dbName;
+                document.getElementById('mongoNewCollName').value = '';
+                document.getElementById('mongoNewCollName').focus();
+            }
+        }
+        
+        function closeCreateMongoDbModal() {
+            document.getElementById('createMongoDbModal').classList.remove('show');
+        }
+        
+        function createMongoDatabase() {
+            const dbName = document.getElementById('mongoNewDbName').value.trim();
+            const collName = document.getElementById('mongoNewCollName').value.trim();
+            
+            if (!dbName) { alert('请输入数据库名称'); return; }
+            if (!collName) { alert('请输入集合名称'); return; }
+            
+            fetch('/api/v1/mongodb/create-database', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionId: currentMongoConnId, database: dbName, collection: collName})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) { 
+                    alert('数据库创建成功!'); 
+                    closeCreateMongoDbModal();
+                    loadMongoDatabases(currentMongoConnId);
+                } else { 
+                    alert('创建失败: ' + data.error); 
+                }
+            });
+        }
+        
+        // 显示索引管理对话框
+        function showMongoIndexModal(connId) {
+            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            currentMongoConnId = connId;
+            document.getElementById('mongoIndexInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
+            document.getElementById('mongoIndexKeys').value = '';
+            document.getElementById('mongoIndexUnique').checked = false;
+            document.getElementById('mongoIndexName').value = '';
+            loadMongoIndexes(connId);
+            document.getElementById('mongoIndexModal').classList.add('show');
+        }
+        
+        function closeMongoIndexModal() {
+            document.getElementById('mongoIndexModal').classList.remove('show');
+        }
+        
+        // 加载索引列表
+        function loadMongoIndexes(connId) {
+            fetch('/api/v1/mongodb/indexes?connectionId=' + connId + '&database=' + encodeURIComponent(mongoCurrentDb) + '&collection=' + encodeURIComponent(mongoCurrentColl))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        var html = '<table class="data-table" style="font-size:12px;"><thead><tr><th>名称</th><th>字段</th><th>唯一</th><th>操作</th></tr></thead><tbody>';
+                        data.indexes.forEach(function(idx) {
+                            var keyStr = JSON.stringify(idx.key).replace(/[{}"]/g, '');
+                            html += '<tr>';
+                            html += '<td>' + idx.name + '</td>';
+                            html += '<td>' + keyStr + '</td>';
+                            html += '<td>' + (idx.unique ? '✓' : '-') + '</td>';
+                            if (idx.name !== '_id_') {
+                                html += '<td><button class="btn btn-danger btn-xs" onclick="dropMongoIndex(\'' + idx.name + '\')">删除</button></td>';
+                            } else {
+                                html += '<td>-</td>';
+                            }
+                            html += '</tr>';
+                        });
+                        html += '</tbody></table>';
+                        document.getElementById('mongoIndexList').innerHTML = html;
+                    } else {
+                        document.getElementById('mongoIndexList').innerHTML = '<div class="error">加载失败: ' + data.error + '</div>';
+                    }
+                });
+        }
+        
+        // 创建索引
+        function createMongoIndex() {
+            var keysStr = document.getElementById('mongoIndexKeys').value.trim();
+            if (!keysStr) { alert('请输入索引字段'); return; }
+            
+            // 解析字段: "name:1, age:-1" -> {"name": 1, "age": -1}
+            var keys = {};
+            keysStr.split(',').forEach(function(pair) {
+                var parts = pair.split(':').map(function(s) { return s.trim(); });
+                if (parts.length === 2) {
+                    keys[parts[0]] = parseInt(parts[1]) || 1;
+                }
+            });
+            
+            if (Object.keys(keys).length === 0) { alert('无效的字段格式'); return; }
+            
+            var unique = document.getElementById('mongoIndexUnique').checked;
+            var name = document.getElementById('mongoIndexName').value.trim();
+            
+            fetch('/api/v1/mongodb/create-index', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    connectionId: currentMongoConnId,
+                    database: mongoCurrentDb,
+                    collection: mongoCurrentColl,
+                    keys: keys,
+                    unique: unique,
+                    name: name
+                })
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    document.getElementById('mongoIndexKeys').value = '';
+                    document.getElementById('mongoIndexUnique').checked = false;
+                    document.getElementById('mongoIndexName').value = '';
+                    loadMongoIndexes(currentMongoConnId);
+                    document.getElementById('mongoSuccessMsg').textContent = '索引创建成功: ' + data.index_name;
+                    setTimeout(function() { document.getElementById('mongoSuccessMsg').textContent = ''; }, 3000);
+                } else {
+                    alert('创建失败: ' + data.error);
+                }
+            });
+        }
+        
+        // 删除索引
+        function dropMongoIndex(indexName) {
+            if (!confirm('确定要删除索引 ' + indexName + ' 吗?')) return;
+            fetch('/api/v1/mongodb/drop-index', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    connectionId: currentMongoConnId,
+                    database: mongoCurrentDb,
+                    collection: mongoCurrentColl,
+                    index_name: indexName
+                })
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    loadMongoIndexes(currentMongoConnId);
+                    document.getElementById('mongoSuccessMsg').textContent = '索引已删除';
+                    setTimeout(function() { document.getElementById('mongoSuccessMsg').textContent = ''; }, 3000);
+                } else {
+                    alert('删除失败: ' + data.error);
+                }
+            });
         }
         
         // 连接数据库
@@ -2501,16 +3426,17 @@
         
         function updateDefaultPort() {
             const dbType = document.getElementById('dbType').value;
-            const ports = {mysql: 3306, postgresql: 5432, redis: 6379};
+            const ports = {mysql: 3306, postgresql: 5432, redis: 6379, mongodb: 27017};
             document.getElementById('dbPort').value = ports[dbType] || 3306;
             
-            // Redis 不需要用户名和数据库名, 调整表单提示
+            // Redis/MongoDB 不需要用户名和数据库名, 调整表单提示
             const isRedis = dbType === 'redis';
-            document.getElementById('userLabel').textContent = isRedis ? '用户名 (可选)' : '用户名 *';
-            document.getElementById('dbLabel').textContent = isRedis ? '库编号 (可选)' : '数据库名 *';
-            document.getElementById('dbUser').placeholder = isRedis ? '默认不填' : 'root';
-            document.getElementById('dbName').placeholder = isRedis ? '0' : 'test';
-            document.getElementById('charsetGroup').style.display = isRedis ? 'none' : '';
+            const isMongo = dbType === 'mongodb';
+            document.getElementById('userLabel').textContent = (isRedis || isMongo) ? '用户名 (可选)' : '用户名 *';
+            document.getElementById('dbLabel').textContent = (isRedis || isMongo) ? '库编号 (可选)' : '数据库名 *';
+            document.getElementById('dbUser').placeholder = isRedis ? '默认不填' : (isMongo ? '可选' : 'root');
+            document.getElementById('dbName').placeholder = isRedis ? '0' : (isMongo ? '可选' : 'test');
+            document.getElementById('charsetGroup').style.display = (isRedis || isMongo) ? 'none' : '';
         }
         
         function toggleConnectionMode() {
@@ -2571,13 +3497,15 @@
         async function saveConnection() {
             const data = getConnectionFormData();
             
-            // Redis: 用户名和数据库名可选; SQL数据库: 必填
+            // Redis/MongoDB: 用户名和数据库名可选; SQL数据库: 必填用户名, 数据库名可选(可后续创建)
             const isRedis = data.db_type === 'redis';
+            const isMongo = data.db_type === 'mongodb';
             if (!data.name || !data.host) {
                 alert('请填写必填字段');
                 return;
             }
-            if (!isRedis && (!data.username || !data.database_name)) {
+            // SQL数据库只需要用户名, 数据库名可选(可以连接后创建)
+            if (!isRedis && !isMongo && !data.username) {
                 alert('请填写必填字段');
                 return;
             }

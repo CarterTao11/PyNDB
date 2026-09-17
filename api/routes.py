@@ -55,8 +55,10 @@ def create_connection():
     data = request.json
     
     is_redis = data.get('db_type') == 'redis'
+    is_mongo = data.get('db_type') == 'mongodb'
     required = ['name', 'db_type', 'host', 'port']
-    if not is_redis:
+    # Redis/MongoDB 不需要数据库名, SQL数据库需要
+    if not is_redis and not is_mongo:
         required += ['username', 'database_name']
     for field in required:
         if not data.get(field):
@@ -817,6 +819,388 @@ def redis_server_info():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+# ==================== MongoDB API ====================
+@api.route('/mongodb/databases', methods=['GET'])
+def mongodb_databases():
+    """获取数据库列表"""
+    conn_id = request.args.get('connectionId', type=int)
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        databases = db.connection.list_database_names()
+        return jsonify({'success': True, 'databases': databases})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/collections', methods=['GET'])
+def mongodb_collections():
+    """获取集合列表"""
+    conn_id = request.args.get('connectionId', type=int)
+    database = request.args.get('database', '')
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        collections = db.connection[database].list_collection_names()
+        return jsonify({'success': True, 'collections': collections})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/schema', methods=['GET'])
+def mongodb_schema():
+    """获取集合字段结构"""
+    conn_id = request.args.get('connectionId', type=int)
+    database = request.args.get('database', '')
+    collection = request.args.get('collection', '')
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        coll = db.connection[database][collection]
+        
+        # 分析所有文档获取字段
+        fields = set()
+        total_count = coll.count_documents({})
+        
+        # 如果数据量太大，分批处理
+        batch_size = 1000
+        if total_count > 10000:
+            # 大数据量时只采样
+            sample = list(coll.find().limit(500))
+            for doc in sample:
+                for key in doc.keys():
+                    fields.add(key)
+        else:
+            # 小数据量时遍历所有文档
+            for doc in coll.find():
+                for key in doc.keys():
+                    fields.add(key)
+        
+        fields_list = sorted(list(fields))
+        
+        # 返回字段列表在 header 中
+        response = jsonify({'success': True, 'fields': fields_list, 'total': total_count})
+        response.headers['X-Mongo-Fields'] = ','.join(fields_list)
+        return response
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/find', methods=['POST'])
+def mongodb_find():
+    """查询文档"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    query = data.get('query', {})
+    limit = data.get('limit', 100)
+    skip = data.get('skip', 0)
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        if isinstance(query, str) and query.strip():
+            import json
+            def parse_json(s):
+                if not s or not isinstance(s, str):
+                    return {}
+                try:
+                    return json.loads(s)
+                except:
+                    s = s.replace("'", '"')
+                    return json.loads(s)
+            
+            query = parse_json(query)
+        
+        coll = db.connection[database][collection]
+        cursor = coll.find(query).skip(skip).limit(limit)
+        documents = []
+        for doc in cursor:
+            doc['_id'] = str(doc.get('_id', ''))
+            documents.append(doc)
+        
+        total = coll.count_documents(query)
+        
+        # 获取所有字段名（包含 _id）
+        all_fields = set()
+        for doc in coll.find(query).limit(min(total, 1000)):
+            for key in doc.keys():
+                all_fields.add(key)
+        fields_list = sorted(list(all_fields))
+        
+        response = jsonify({'success': True, 'documents': documents, 'total': total, 'limit': limit, 'skip': skip})
+        response.headers['X-Mongo-Fields'] = ','.join(fields_list)
+        return response
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/insert', methods=['POST'])
+def mongodb_insert():
+    """插入文档"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    document = data.get('document', {})
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        import json
+        if isinstance(document, str) and document.strip():
+            try:
+                document = json.loads(document)
+            except:
+                # 转换单引号为双引号
+                document = json.loads(document.replace("'", '"'))
+        
+        coll = db.connection[database][collection]
+        if isinstance(document, list):
+            result = coll.insert_many(document)
+            return jsonify({'success': True, 'inserted_ids': [str(x) for x in result.inserted_ids]})
+        else:
+            result = coll.insert_one(document)
+            return jsonify({'success': True, 'inserted_id': str(result.inserted_id)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/update', methods=['POST'])
+def mongodb_update():
+    """更新文档"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    query = data.get('query', {})
+    update = data.get('update', {})
+    many = data.get('many', False)
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        import json
+        import re
+        def parse_json(s):
+            if not s or not isinstance(s, str):
+                return {}
+            # 尝试 json.loads, 如果失败则尝试转换单引号为双引号
+            try:
+                return json.loads(s)
+            except:
+                # 替换单引号为双引号, 处理 MongoDB 语法
+                s = s.replace("'", '"')
+                # 处理 $ 开头的键名 (保持为字符串)
+                return json.loads(s)
+        
+        if isinstance(query, str) and query.strip():
+            query = parse_json(query)
+        if isinstance(update, str) and update.strip():
+            update = parse_json(update)
+        
+        # 转换 _id 为 ObjectId
+        from bson import ObjectId
+        if '_id' in query and isinstance(query['_id'], str):
+            try:
+                query['_id'] = ObjectId(query['_id'])
+            except:
+                pass
+        
+        coll = db.connection[database][collection]
+        if many:
+            result = coll.update_many(query, update)
+        else:
+            result = coll.update_one(query, update)
+        return jsonify({'success': True, 'modified_count': result.modified_count, 'matched_count': result.matched_count})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/delete', methods=['POST'])
+def mongodb_delete():
+    """删除文档"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    query = data.get('query', {})
+    many = data.get('many', False)
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        import json
+        def parse_json(s):
+            if not s or not isinstance(s, str):
+                return {}
+            try:
+                return json.loads(s)
+            except:
+                s = s.replace("'", '"')
+                return json.loads(s)
+        
+        if isinstance(query, str) and query.strip():
+            query = parse_json(query)
+        
+        # 转换 _id 为 ObjectId
+        from bson import ObjectId
+        if '_id' in query and isinstance(query['_id'], str):
+            try:
+                query['_id'] = ObjectId(query['_id'])
+            except:
+                pass
+        
+        coll = db.connection[database][collection]
+        if many:
+            result = coll.delete_many(query)
+        else:
+            result = coll.delete_one(query)
+        return jsonify({'success': True, 'deleted_count': result.deleted_count})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/server-info', methods=['GET'])
+def mongodb_server_info():
+    """获取 MongoDB 服务器信息"""
+    conn_id = request.args.get('connectionId', type=int)
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        info = db.connection.admin.command('buildInfo')
+        return jsonify({'success': True, 'info': {'version': info.get('version', ''), 'gitVersion': info.get('gitVersion', ''), 'maxBsonObjectSize': info.get('maxBsonObjectSize', 0)}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/create-database', methods=['POST'])
+def mongodb_create_database():
+    """创建数据库 (通过创建空集合)"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    
+    if not database:
+        return jsonify({'success': False, 'error': '请指定数据库名称'}), 400
+    if not collection:
+        return jsonify({'success': False, 'error': '请指定集合名称'}), 400
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        # 创建一个空集合来创建数据库
+        db.connection[database][collection].insert_one({'_temp': True})
+        # 删除临时文档
+        db.connection[database][collection].delete_one({'_temp': True})
+        return jsonify({'success': True, 'message': f'数据库 {database} 创建成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/indexes', methods=['GET'])
+def mongodb_indexes():
+    """获取集合索引列表"""
+    conn_id = request.args.get('connectionId', type=int)
+    database = request.args.get('database', '')
+    collection = request.args.get('collection', '')
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        coll = db.connection[database][collection]
+        indexes = list(coll.list_indexes())
+        # 简化索引信息
+        index_list = []
+        for idx in indexes:
+            index_list.append({
+                'name': idx.get('name', ''),
+                'key': idx.get('key', {}),
+                'unique': idx.get('unique', False),
+                'sparse': idx.get('sparse', False),
+                'expireAfterSeconds': idx.get('expireAfterSeconds')
+            })
+        return jsonify({'success': True, 'indexes': index_list})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/create-index', methods=['POST'])
+def mongodb_create_index():
+    """创建索引"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    keys = data.get('keys', {})  # 例如: {"name": 1, "age": -1}
+    unique = data.get('unique', False)
+    name = data.get('name', '')
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        coll = db.connection[database][collection]
+        index_keys = {}
+        # 解析 keys 字符串
+        if isinstance(keys, str):
+            import json
+            try:
+                index_keys = json.loads(keys)
+            except:
+                keys = keys.replace("'", '"')
+                index_keys = json.loads(keys)
+        else:
+            index_keys = keys
+        
+        # 构建索引选项
+        index_options = {'unique': unique}
+        if name:
+            index_options['name'] = name
+        
+        # 创建索引
+        result = coll.create_index(list(index_keys.items()), **index_options)
+        return jsonify({'success': True, 'index_name': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@api.route('/mongodb/drop-index', methods=['POST'])
+def mongodb_drop_index():
+    """删除索引"""
+    data = request.json
+    conn_id = data.get('connectionId')
+    database = data.get('database', '')
+    collection = data.get('collection', '')
+    index_name = data.get('index_name', '')
+    
+    if not index_name:
+        return jsonify({'success': False, 'error': '请指定索引名称'}), 400
+    
+    db = get_active_connection(conn_id)
+    if not db:
+        return jsonify({'success': False, 'error': '未连接'}), 400
+    try:
+        coll = db.connection[database][collection]
+        result = coll.drop_index(index_name)
+        return jsonify({'success': True, 'message': f'索引 {index_name} 已删除'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 
 @api.route('/export/json', methods=['POST'])

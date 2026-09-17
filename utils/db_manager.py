@@ -222,6 +222,21 @@ class DatabaseManager:
                 if self.config.mode == 'ssh':
                     self._hint_ssh_target(e)
                 raise
+        elif self.config.db_type == 'mongodb':
+            try:
+                import pymongo
+                from pymongo import MongoClient
+                # MongoDB 连接字符串
+                if self.config.username and self.config.password:
+                    uri = f"mongodb://{self.config.username}:{self.config.password}@{db_host}:{db_port}/{self.config.database_name or ''}"
+                else:
+                    uri = f"mongodb://{db_host}:{db_port}/{self.config.database_name or ''}"
+                self.connection = MongoClient(uri, serverSelectionTimeoutMS=10000)
+                self.connection.admin.command('ping')  # 测试连接
+            except Exception as e:
+                if self.config.mode == 'ssh':
+                    self._hint_ssh_target(e)
+                raise
 
         latency_ms = int((time.time() - start_time) * 1000)
         return latency_ms
