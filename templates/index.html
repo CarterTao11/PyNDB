@@ -1729,6 +1729,9 @@
         var mongoCurrentColl = '';
         
         function renderMongoDBPanel(connId) {
+            // Store the connection ID globally for MongoDB operations
+            currentMongoConnId = connId;
+            
             const panel = document.getElementById('contentPanel');
             panel.querySelectorAll(':scope > .empty-state').forEach(el => el.remove());
             const existingTree = panel.querySelector('.object-tree');
@@ -1939,6 +1942,7 @@
         function deleteMongoInlineRow(btn) {
             const tr = btn.closest('tr');
             const id = tr.getAttribute('data-id');
+            console.log('deleteMongoInlineRow called, id:', id);
             if (!id) {
                 tr.remove();
                 return;
@@ -1947,6 +1951,7 @@
             if (!deletedRows.includes(id)) {
                 deletedRows.push(id);
             }
+            console.log('deletedRows now:', deletedRows);
             tr.remove();
             showToast('已标记待删除，点击保存生效', 'info');
         }
@@ -1954,18 +1959,26 @@
         // Save MongoDB inline changes (including deletes)
         async function saveMongoChanges() {
             console.log('saveMongoChanges called', {currentMongoConnId, mongoCurrentDb, mongoCurrentColl, deletedRows});
+            if (!currentMongoConnId || !mongoCurrentDb || !mongoCurrentColl) {
+                showToast('请先选择数据库和集合', 'error');
+                return;
+            }
             if (deletedRows.length === 0) {
                 showToast('没有需要保存的修改', 'info');
                 return;
             }
             
+            console.log('Starting delete for rows:', deletedRows);
             const promises = deletedRows.map(function(id) {
-                console.log('Deleting id:', id);
+                console.log('Deleting id:', id, 'conn:', currentMongoConnId, 'db:', mongoCurrentDb, 'coll:', mongoCurrentColl);
                 return fetch('/api/v1/mongodb/delete', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: JSON.stringify({_id: id}), many: false})
-                }).then(function(r) { return r.json(); });
+                }).then(function(r) { 
+                    console.log('Delete response status:', r.status);
+                    return r.json(); 
+                });
             });
             
             const results = await Promise.all(promises);
@@ -1993,6 +2006,23 @@
             const tbody = table.querySelector('tbody');
             const rows = tbody.querySelectorAll('tr');
             const promises = [];
+            let deleteCount = 0;
+            let insertCount = 0;
+            let updateCount = 0;
+            
+            // First, handle pending deletes
+            if (deletedRows.length > 0) {
+                deleteCount = deletedRows.length;
+                deletedRows.forEach(function(id) {
+                    promises.push(fetch('/api/v1/mongodb/delete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: JSON.stringify({_id: id}), many: false})
+                    }).then(function(r) { return r.json(); }));
+                });
+                deletedRows = [];
+            }
+            
             rows.forEach(function(tr) {
                 const id = tr.getAttribute('data-id');
                 const cells = tr.querySelectorAll('td');
@@ -2006,6 +2036,7 @@
                 });
                 if (!id) {
                     // New row - insert
+                    insertCount++;
                     promises.push(fetch('/api/v1/mongodb/insert', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
@@ -2013,6 +2044,7 @@
                     }).then(function(r) { return r.json(); }));
                 } else {
                     // Existing row - update by _id
+                    updateCount++;
                     promises.push(fetch('/api/v1/mongodb/update', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
@@ -2022,11 +2054,17 @@
             });
             Promise.all(promises).then(function(results) {
                 const errors = results.filter(function(r) { return !r.success; });
-                const successes = results.filter(function(r) { return r.success; });
                 if (errors.length > 0) {
                     showToast('部分操作失败: ' + errors.map(function(e) { return e.error; }).join(', '), 'error');
-                } else if (successes.length > 0) {
-                    showToast('保存成功! ' + successes.length + ' 条记录', 'success');
+                } else {
+                    // Build success message
+                    let msg = '';
+                    if (deleteCount > 0) msg += '删除' + deleteCount + '条';
+                    if (insertCount > 0) msg += (msg ? ', ' : '') + '新增' + insertCount + '条';
+                    if (updateCount > 0) msg += (msg ? ', ' : '') + '更新' + updateCount + '条';
+                    if (msg) {
+                        showToast(msg + '保存成功!', 'success');
+                    }
                 }
                 executeMongoFind(currentMongoConnId);
             });
