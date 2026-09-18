@@ -925,6 +925,27 @@
         </div>
     </div>
     
+    <!-- SQL 插入数据对话框 -->
+    <div class="modal" id="sqlInsertModal">
+        <div class="modal-content" style="width: 500px;">
+            <div class="modal-header">
+                <span>插入数据</span>
+                <span class="close" onclick="closeSqlInsertModal()">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>表名</label>
+                    <div id="sqlInsertTableName" style="color: var(--text-muted); font-size: 12px;"></div>
+                </div>
+                <div id="sqlInsertFields" style="max-height: 300px; overflow-y: auto;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSqlInsertModal()">取消</button>
+                <button class="btn btn-success" onclick="executeSqlInsert()">插入</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- 字段编辑对话框 (添加/修改字段) -->
     <div class="modal" id="columnModal">
         <div class="modal-content">
@@ -1240,6 +1261,8 @@
                             <div class="result-header">
                                 <span id="resultInfo">请选择表或输入SQL</span>
                                 <div class="result-actions">
+                                    <button class="btn btn-success btn-sm" id="insertRowBtn" onclick="showInsertModal()" style="display:none;">插入</button>
+                                    <button class="btn btn-primary btn-sm" id="saveChangesBtn" onclick="saveAllChanges()" style="display:none;">保存修改</button>
                                     <span id="resultCount"></span>
                                     <span id="resultTime"></span>
                                 </div>
@@ -1295,9 +1318,29 @@
         
         // 打开表标签页
         async function openTableTab(connId, tableName) {
+            // 保存当前标签的SQL和结果
+            if (activeTabIndex >= 0 && activeTabIndex < openTabs.length) {
+                const sqlEl = document.getElementById('sqlInput');
+                const resultContent = document.getElementById('resultContent');
+                const resultCount = document.getElementById('resultCount');
+                const resultTime = document.getElementById('resultTime');
+                openTabs[activeTabIndex].sql = sqlEl.value;
+                openTabs[activeTabIndex].resultHtml = resultContent.innerHTML;
+                openTabs[activeTabIndex].resultCount = resultCount.textContent;
+                openTabs[activeTabIndex].resultTime = resultTime.textContent;
+            }
             const existingIndex = openTabs.findIndex(t => t.connId === connId && t.tableName === tableName);
             if (existingIndex >= 0) {
                 activeTabIndex = existingIndex;
+                // 恢复该标签的SQL和结果
+                const sqlEl = document.getElementById('sqlInput');
+                const resultContent = document.getElementById('resultContent');
+                const resultCount = document.getElementById('resultCount');
+                const resultTime = document.getElementById('resultTime');
+                sqlEl.value = openTabs[activeTabIndex].sql || '';
+                resultContent.innerHTML = openTabs[activeTabIndex].resultHtml || '<div class="empty-state"><div>点击表或执行SQL查询</div></div>';
+                resultCount.textContent = openTabs[activeTabIndex].resultCount || '';
+                resultTime.textContent = openTabs[activeTabIndex].resultTime || '';
             } else {
                 openTabs.push({connId, tableName, type: 'table'});
                 activeTabIndex = openTabs.length - 1;
@@ -1326,29 +1369,73 @@
         
         // 切换标签
         function switchTab(index) {
+            // 保存当前标签的SQL和结果
+            if (activeTabIndex >= 0 && activeTabIndex < openTabs.length) {
+                const sqlEl = document.getElementById('sqlInput');
+                const resultContent = document.getElementById('resultContent');
+                const resultCount = document.getElementById('resultCount');
+                const resultTime = document.getElementById('resultTime');
+                openTabs[activeTabIndex].sql = sqlEl.value;
+                openTabs[activeTabIndex].resultHtml = resultContent.innerHTML;
+                openTabs[activeTabIndex].resultCount = resultCount.textContent;
+                openTabs[activeTabIndex].resultTime = resultTime.textContent;
+            }
             activeTabIndex = index;
             if (activeTabIndex >= 0) {
                 currentConnId = openTabs[activeTabIndex].connId;
+                // 恢复新标签的SQL和结果
+                const sqlEl = document.getElementById('sqlInput');
+                const resultContent = document.getElementById('resultContent');
+                const resultCount = document.getElementById('resultCount');
+                const resultTime = document.getElementById('resultTime');
+                sqlEl.value = openTabs[activeTabIndex].sql || '';
+                resultContent.innerHTML = openTabs[activeTabIndex].resultHtml || '<div class="empty-state"><div>点击表或执行SQL查询</div></div>';
+                resultCount.textContent = openTabs[activeTabIndex].resultCount || '';
+                resultTime.textContent = openTabs[activeTabIndex].resultTime || '';
+                // 更新插入按钮状态
+                var insertBtn = document.getElementById('insertRowBtn');
+                var saveBtn = document.getElementById('saveChangesBtn');
+                if (openTabs[activeTabIndex].hasOwnProperty('tableName') && openTabs[activeTabIndex].tableName) {
+                    insertBtn.style.display = '';
+                    saveBtn.style.display = '';
+                } else {
+                    insertBtn.style.display = 'none';
+                    saveBtn.style.display = 'none';
+                }
+                // 清空待删除标记
+                deletedRows = [];
             }
             renderConnectionList();
             renderTabBar();
-            loadTableData();
         }
         
         // 关闭标签
         function closeTab(index) {
+            // 保存当前标签的SQL和结果
+            const sqlEl = document.getElementById('sqlInput');
+            const resultContent = document.getElementById('resultContent');
+            const resultCount = document.getElementById('resultCount');
+            const resultTime = document.getElementById('resultTime');
+            if (activeTabIndex >= 0 && activeTabIndex < openTabs.length) {
+                openTabs[activeTabIndex].sql = sqlEl.value;
+                openTabs[activeTabIndex].resultHtml = resultContent.innerHTML;
+                openTabs[activeTabIndex].resultCount = resultCount.textContent;
+                openTabs[activeTabIndex].resultTime = resultTime.textContent;
+            }
             openTabs.splice(index, 1);
             if (activeTabIndex >= openTabs.length) {
                 activeTabIndex = openTabs.length - 1;
             }
             if (activeTabIndex >= 0) {
                 currentConnId = openTabs[activeTabIndex].connId;
+                // 恢复新标签的SQL和结果
+                sqlEl.value = openTabs[activeTabIndex].sql || '';
+                resultContent.innerHTML = openTabs[activeTabIndex].resultHtml || '<div class="empty-state"><div>点击表或执行SQL查询</div></div>';
+                resultCount.textContent = openTabs[activeTabIndex].resultCount || '';
+                resultTime.textContent = openTabs[activeTabIndex].resultTime || '';
             }
             renderConnectionList();
             renderTabBar();
-            if (activeTabIndex >= 0) {
-                loadTableData();
-            }
         }
         
         // ==================== Redis 界面 ====================
@@ -2402,6 +2489,18 @@
             // 表数据浏览模式与手动执行统一: 识别主表, 有主键即可编辑
             editCtx = await resolveEditCtx(tab.connId, querySql);
             await executeQuery(querySql);
+            // 显示/隐藏插入按钮
+            var insertBtn = document.getElementById('insertRowBtn');
+            var saveBtn = document.getElementById('saveChangesBtn');
+            if (editCtx && editCtx.table) {
+                insertBtn.style.display = '';
+                saveBtn.style.display = '';
+            } else {
+                insertBtn.style.display = 'none';
+                saveBtn.style.display = 'none';
+            }
+            // 清空待删除标记
+            deletedRows = [];
         }
         
         // 执行SQL
@@ -2424,6 +2523,9 @@
                 alert('请先选择数据库连接');
                 return;
             }
+            
+            // 重新执行查询时清空待删除标记
+            deletedRows = [];
             
             pushSqlHistory(sql);
             const tab = openTabs[activeTabIndex];
@@ -2491,6 +2593,92 @@
             }
         }
         
+        // 显示插入数据对话框
+        let sqlInsertTableName = '';
+        function showInsertModal() {
+            if (activeTabIndex < 0 || !editCtx || !editCtx.table) {
+                alert('请先选择一个表进行查询');
+                return;
+            }
+            sqlInsertTableName = editCtx.table;
+            document.getElementById('sqlInsertTableName').textContent = sqlInsertTableName;
+            document.getElementById('sqlInsertFields').innerHTML = '<div style="text-align:center;padding:20px;">加载中...</div>';
+            document.getElementById('sqlInsertModal').classList.add('show');
+            
+            // 获取表结构
+            fetch('/api/v1/metadata/table/describe?connectionId=' + editCtx.connId + '&table=' + encodeURIComponent(sqlInsertTableName))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        var html = '';
+                        data.columns.forEach(function(col) {
+                            var colName = col.name || col.COLUMN_NAME || col.column_name || 'unknown';
+                            var colType = col.type || col.DATA_TYPE || col.data_type || '';
+                            // PostgreSQL: is_nullable = 'YES' or 'NO', MySQL: IS_NULLABLE = 'YES' or 'NO'
+                            var isNullable = (col.is_nullable === 'YES' || col.is_nullable === 'yes' || col.IS_NULLABLE === 'YES' || col.IS_NULLABLE === 'yes' || col.is_nullable === true);
+                            var requiredStar = isNullable ? '' : ' <span style="color:var(--danger-text);">*</span>';
+                            html += '<div class="form-group" style="margin-bottom:8px;display:flex;align-items:center;gap:8px;">';
+                            html += '<label style="min-width:80px;max-width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + colName + '">' + colName + requiredStar + '</label>';
+                            html += '<input type="text" id="insert_field_' + colName + '" data-column="' + colName + '" placeholder="' + colType + '" style="flex:1;min-width:0;padding:6px 8px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);">';
+                            html += '</div>';
+                        });
+                        document.getElementById('sqlInsertFields').innerHTML = html;
+                    } else {
+                        document.getElementById('sqlInsertFields').innerHTML = '<div class="error">加载失败: ' + data.error + '</div>';
+                    }
+                });
+        }
+        
+        function closeSqlInsertModal() {
+            document.getElementById('sqlInsertModal').classList.remove('show');
+        }
+        
+        function executeSqlInsert() {
+            if (!sqlInsertTableName || !editCtx) return;
+            
+            var fields = [];
+            var values = [];
+            var inputs = document.querySelectorAll('#sqlInsertFields input');
+            inputs.forEach(function(input) {
+                var colName = input.dataset.column;
+                var val = input.value.trim();
+                if (val) {
+                    fields.push(colName);
+                    // 判断是否需要引号
+                    if (val === 'NULL' || val.match(/^\d+(\.\d+)?$/) || val === 'true' || val === 'false') {
+                        values.push(val);
+                    } else {
+                        values.push("'" + val.replace(/'/g, "''") + "'");
+                    }
+                }
+            });
+            
+            if (fields.length === 0) {
+                alert('请至少填写一个字段');
+                return;
+            }
+            
+            var dbType = (connections[editCtx.connId] || {}).db_type;
+            var qt = dbType === 'mysql' ? '`' : '"';
+            var sql = 'INSERT INTO ' + qt + sqlInsertTableName + qt + ' (' + fields.join(', ') + ') VALUES (' + values.join(', ') + ')';
+            
+            fetch('/api/v1/query/execute', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionId: editCtx.connId, sql: sql})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    closeSqlInsertModal();
+                    // 刷新当前查询
+                    var sqlEl = document.getElementById('sqlInput');
+                    executeQuery(sqlEl.value);
+                    document.getElementById('resultInfo').textContent = '插入成功!';
+                } else {
+                    alert('插入失败: ' + data.error);
+                }
+            });
+        }
+        
         // ==================== SQL输入框: Ctrl+Enter + 上下键历史 ====================
         let sqlHistory = [];      // 历史记录 (旧 -> 新)
         let histIdx = 0;          // 当前浏览位置, sqlHistory.length 表示草稿
@@ -2499,6 +2687,7 @@
         const tableColumns = {};  // 列名缓存: "connId:table" -> [列名]
         let editCtx = null;       // 当前结果是否可编辑: {connId, table, pkColumns}
         let lastResult = null;    // 最近一次查询结果 {columns, data}
+        let deletedRows = [];    // 待删除的行索引列表
 
         const SQL_KEYWORDS = [
             'SELECT', 'FROM', 'WHERE', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
@@ -2897,6 +3086,95 @@
             });
             input.addEventListener('blur', () => finish(true));
         }
+        
+        // 通过主键删除行 (仅标记，从UI移除，等待保存)
+        function deleteRowById(ri) {
+            if (!editCtx || !editCtx.pkColumns.length || !lastResult) {
+                alert('无法删除：该查询没有主键');
+                return;
+            }
+            const row = lastResult.data[ri];
+            if (!row) return;
+            
+            // 检查主键是否有NULL
+            for (const pk of editCtx.pkColumns) {
+                if (row[pk] === null || row[pk] === undefined) {
+                    alert('该行主键包含 NULL, 无法定位记录');
+                    return;
+                }
+            }
+            
+            // 标记该行待删除
+            if (!deletedRows.includes(ri)) {
+                deletedRows.push(ri);
+            }
+            
+            // 从UI移除该行
+            const table = document.getElementById('resultContent').querySelector('table');
+            if (table) {
+                const tbody = table.querySelector('tbody');
+                if (tbody && tbody.rows[ri]) {
+                    tbody.rows[ri].remove();
+                }
+            }
+            
+            // 更新显示
+            document.getElementById('resultInfo').textContent = '已标记 ' + deletedRows.length + ' 行待删除，点击保存生效';
+        }
+        
+        // 保存所有修改 (包括删除)
+        async function saveAllChanges() {
+            if (!editCtx || deletedRows.length === 0) {
+                alert('没有需要保存的修改');
+                return;
+            }
+            
+            const dbType = (connections[editCtx.connId] || {}).db_type;
+            const qt = dbType === 'mysql' ? '`' : '"';
+            const promises = [];
+            
+            // 为每个待删除的行构建DELETE语句
+            deletedRows.forEach(function(ri) {
+                const row = lastResult.data[ri];
+                if (!row) return;
+                
+                const pkVals = {};
+                for (const pk of editCtx.pkColumns) {
+                    pkVals[pk] = row[pk];
+                }
+                
+                let whereClause = '';
+                for (const pk in pkVals) {
+                    const val = pkVals[pk];
+                    if (typeof val === 'number') {
+                        whereClause += (whereClause ? ' AND ' : '') + qt + pk + qt + ' = ' + val;
+                    } else {
+                        whereClause += (whereClause ? ' AND ' : '') + qt + pk + qt + " = '" + String(val).replace(/'/g, "''") + "'";
+                    }
+                }
+                const sql = 'DELETE FROM ' + qt + editCtx.table + qt + ' WHERE ' + whereClause;
+                
+                promises.push(fetch('/api/v1/query/execute', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({connectionId: editCtx.connId, sql: sql})
+                }).then(function(r) { return r.json(); }));
+            });
+            
+            const results = await Promise.all(promises);
+            const errors = results.filter(function(r) { return !r.success; });
+            
+            if (errors.length > 0) {
+                alert('部分删除失败: ' + errors.map(function(e) { return e.error; }).join(', '));
+            } else {
+                document.getElementById('resultInfo').textContent = '保存成功! ' + deletedRows.length + ' 行已删除';
+            }
+            
+            // 清空标记并刷新
+            deletedRows = [];
+            const sqlEl = document.getElementById('sqlInput');
+            executeQuery(sqlEl.value);
+        }
 
         // 渲染查询结果
         // ==================== JSON 悬停查看器 ====================
@@ -2969,6 +3247,7 @@
             const editable = pkReady;
             let html = '<table class="data-table"><thead><tr>';
             result.columns.forEach(col => html += `<th>${escapeHtml(col)}</th>`);
+            if (editable) html += '<th style="width:50px;">操作</th>';
             html += '</tr></thead><tbody>';
             
             result.data.forEach((row, ri) => {
@@ -2991,6 +3270,9 @@
                         html += `<td>${cellVal}</td>`;
                     }
                 });
+                if (editable) {
+                    html += '<td><button class="btn btn-danger btn-xs" onclick="deleteRowById(' + ri + ')" title="删除">🗑</button></td>';
+                }
                 html += '</tr>';
             });
             html += '</tbody></table>';
