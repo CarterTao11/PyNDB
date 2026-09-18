@@ -58,6 +58,20 @@
             border: 1px solid var(--border-strong); border-radius: 4px;
             font-size: 12px; cursor: pointer;
         }
+        .toast {
+            padding: 12px 20px; background: var(--bg-elev); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 14px;
+            animation: toastIn 0.3s ease;
+            max-width: 300px; word-wrap: break-word;
+        }
+        .toast.success { border-left: 4px solid var(--success-text); }
+        .toast.error { border-left: 4px solid var(--danger-text); }
+        .toast.info { border-left: 4px solid #007acc; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
         .cell-edit-input {
             width: 100%; box-sizing: border-box; border: 1px solid #007acc;
             background: var(--bg-main); color: var(--text);
@@ -542,6 +556,7 @@
                 <option value="dark">🌙 暗色</option>
             </select>
         </div>
+        <div id="toastContainer" style="position:fixed;top:50px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
         <div class="app-body">
         <!-- 左侧边栏 -->
         <div class="sidebar">
@@ -1051,6 +1066,22 @@
         let openTabs = [];
         let activeTabIndex = -1;
         let currentConnId = null;
+        
+        // 消息提示
+        function showToast(message, type) {
+            type = type || 'info';
+            var container = document.getElementById('toastContainer');
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100px)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 3000);
+        }
         
         // 初始化
         async function init() {
@@ -1606,10 +1637,10 @@
                     // 删除后刷新 key 列表
                     executeRedisCmd(connId, 'KEYS *');
                 } else {
-                    alert('删除失败: ' + data.error);
+                    showToast('删除失败: ' + data.error, 'error');
                 }
             } catch(e) {
-                alert('删除失败: ' + e.message);
+                showToast('删除失败: ' + e.message, 'error');
             }
         }
         
@@ -1722,6 +1753,7 @@
                             <button class="success" onclick="showMongoInsertModal(${connId})">插入</button>
                             <button class="warning" onclick="showMongoUpdateModal(${connId})">更新</button>
                             <button class="danger" onclick="showMongoDeleteModal(${connId})">删除</button>
+                            <button class="primary" onclick="saveMongoChanges()">保存修改</button>
                             <div class="divider"></div>
                             <button class="info" onclick="loadMongoServerInfo(${connId})">服务器信息</button>
                             <button class="secondary" onclick="showMongoCreateDbModal(${connId})">创建数据库</button>
@@ -1816,6 +1848,9 @@
         }
         
         async function executeMongoFind(connId) {
+            // Clear pending deletes when re-running query
+            deletedRows = [];
+            
             if (!mongoCurrentDb || !mongoCurrentColl) {
                 document.getElementById('mongoResult').innerHTML = '<div class="message warning">请先选择数据库和集合</div>';
                 return;
@@ -1908,24 +1943,43 @@
                 tr.remove();
                 return;
             }
-            // Delete from database - use ObjectId
-            fetch('/api/v1/mongodb/delete', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: JSON.stringify({_id: id}), many: false})
-            }).then(function(r) { return r.json(); }).then(function(data) {
-                if (data.success) {
-                    tr.remove();
-                    const msgEl = document.getElementById('mongoSuccessMsg');
-                    msgEl.textContent = '删除成功!';
-                    setTimeout(function() {
-                        msgEl.textContent = '';
-                    }, 2000);
-                    executeMongoFind(currentMongoConnId);
-                } else {
-                    alert('删除失败: ' + data.error);
-                }
+            // Mark for deletion instead of immediate delete
+            if (!deletedRows.includes(id)) {
+                deletedRows.push(id);
+            }
+            tr.remove();
+            showToast('已标记待删除，点击保存生效', 'info');
+        }
+        
+        // Save MongoDB inline changes (including deletes)
+        async function saveMongoChanges() {
+            console.log('saveMongoChanges called', {currentMongoConnId, mongoCurrentDb, mongoCurrentColl, deletedRows});
+            if (deletedRows.length === 0) {
+                showToast('没有需要保存的修改', 'info');
+                return;
+            }
+            
+            const promises = deletedRows.map(function(id) {
+                console.log('Deleting id:', id);
+                return fetch('/api/v1/mongodb/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({connectionId: currentMongoConnId, database: mongoCurrentDb, collection: mongoCurrentColl, query: JSON.stringify({_id: id}), many: false})
+                }).then(function(r) { return r.json(); });
             });
+            
+            const results = await Promise.all(promises);
+            const errors = results.filter(function(r) { return !r.success; });
+            const successes = results.filter(function(r) { return r.success; });
+            
+            if (errors.length > 0) {
+                showToast('部分删除失败: ' + errors.map(function(e) { return e.error; }).join(', '), 'error');
+            } else {
+                showToast('保存成功! ' + successes.length + ' 条已删除', 'success');
+            }
+            
+            deletedRows = [];
+            executeMongoFind(currentMongoConnId);
         }
         
         function saveMongoInlineChanges() {
@@ -1970,20 +2024,16 @@
                 const errors = results.filter(function(r) { return !r.success; });
                 const successes = results.filter(function(r) { return r.success; });
                 if (errors.length > 0) {
-                    alert('部分操作失败: ' + errors.map(function(e) { return e.error; }).join(', '));
+                    showToast('部分操作失败: ' + errors.map(function(e) { return e.error; }).join(', '), 'error');
                 } else if (successes.length > 0) {
-                    const msgEl = document.getElementById('mongoSuccessMsg');
-                    msgEl.textContent = '保存成功! ' + successes.length + ' 条记录';
-                    setTimeout(function() {
-                        msgEl.textContent = '';
-                    }, 3000);
+                    showToast('保存成功! ' + successes.length + ' 条记录', 'success');
                 }
                 executeMongoFind(currentMongoConnId);
             });
         }
         
         function showMongoInsertModal(connId) {
-            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            if (!mongoCurrentDb || !mongoCurrentColl) { showToast('请先选择数据库和集合', "info"); return; }
             document.getElementById('mongoInsertInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
             document.getElementById('mongoInsertFields').innerHTML = '';
             mongoSchemaFields = [];  // 重置
@@ -2032,7 +2082,7 @@
                     doc[name] = value;
                 }
             }
-            if (Object.keys(doc).length === 0) { alert('请至少填写一个字段'); return; }
+            if (Object.keys(doc).length === 0) { showToast('请至少填写一个字段', "info"); return; }
             var docStr = JSON.stringify(doc);
             
             fetch('/api/v1/mongodb/insert', {
@@ -2043,8 +2093,7 @@
                 const infoEl = document.getElementById('mongoResultInfo');
                 if (data.success) { 
                     closeMongoInsertModal();
-                    infoEl.textContent = '插入成功! ID: ' + (data.inserted_id || data.inserted_ids);
-                    infoEl.style.color = 'var(--success-text)';
+                    showToast('插入成功! ID: ' + (data.inserted_id || data.inserted_ids), 'success');
                     executeMongoFind(currentMongoConnId); 
                     // 重新加载字段结构
                     fetch('/api/v1/mongodb/schema?connectionId=' + currentMongoConnId + '&database=' + encodeURIComponent(mongoCurrentDb) + '&collection=' + encodeURIComponent(mongoCurrentColl))
@@ -2077,7 +2126,7 @@
         }
         
         function showMongoUpdateModal(connId) {
-            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            if (!mongoCurrentDb || !mongoCurrentColl) { showToast('请先选择数据库和集合', "info"); return; }
             document.getElementById('mongoUpdateInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
             document.getElementById('mongoUpdateMany').checked = true;
             document.getElementById('mongoUpdateFields').innerHTML = '';
@@ -2139,7 +2188,7 @@
                     queryData[name] = value;
                 }
             }
-            if (Object.keys(queryData).length === 0) { alert('请至少填写一个查询条件'); return; }
+            if (Object.keys(queryData).length === 0) { showToast('请至少填写一个查询条件', "info"); return; }
             var query = JSON.stringify(queryData);
             
             // 从字段输入构建更新操作
@@ -2154,7 +2203,7 @@
                     setData[name] = value;
                 }
             }
-            if (Object.keys(setData).length === 0) { alert('请至少填写一个更新字段'); return; }
+            if (Object.keys(setData).length === 0) { showToast('请至少填写一个更新字段', "info"); return; }
             var update = JSON.stringify({$set: setData});
             
             fetch('/api/v1/mongodb/update', {
@@ -2165,14 +2214,8 @@
                 const infoEl = document.getElementById('mongoResultInfo');
                 if (data.success) { 
                     closeMongoUpdateModal();
-                    infoEl.textContent = '更新成功! 匹配: ' + data.matched_count + ', 修改: ' + data.modified_count;
-                    infoEl.style.color = 'var(--success-text)';
+                    showToast('更新成功! 匹配: ' + data.matched_count + ', 修改: ' + data.modified_count, 'success');
                     executeMongoFind(currentMongoConnId); 
-                    // 3秒后恢复
-                    setTimeout(function() {
-                        infoEl.textContent = mongoCurrentDb + '.' + mongoCurrentColl;
-                        infoEl.style.color = '';
-                    }, 3000);
                 } else { 
                     document.getElementById('mongoResult').innerHTML = '<div class="message error">更新失败: ' + data.error + '</div>';
                 }
@@ -2180,7 +2223,7 @@
         }
         
         function showMongoDeleteModal(connId) {
-            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            if (!mongoCurrentDb || !mongoCurrentColl) { showToast('请先选择数据库和集合', "info"); return; }
             document.getElementById('mongoDeleteInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
             document.getElementById('mongoDeleteMany').checked = false;
             document.getElementById('mongoDeleteQueryFields').innerHTML = '';
@@ -2228,7 +2271,7 @@
                     queryData[name] = value;
                 }
             }
-            if (Object.keys(queryData).length === 0) { alert('请至少填写一个查询条件'); return; }
+            if (Object.keys(queryData).length === 0) { showToast('请至少填写一个查询条件', "info"); return; }
             if (!confirm('确定要删除吗?')) return;
             
             var query = JSON.stringify(queryData);
@@ -2241,14 +2284,8 @@
                 const infoEl = document.getElementById('mongoResultInfo');
                 if (data.success) { 
                     closeMongoDeleteModal();
-                    infoEl.textContent = '删除成功! 删除: ' + data.deleted_count + ' 条';
-                    infoEl.style.color = 'var(--success-text)';
+                    showToast('删除成功! 删除: ' + data.deleted_count + ' 条', 'success');
                     executeMongoFind(currentMongoConnId); 
-                    // 3秒后恢复
-                    setTimeout(function() {
-                        infoEl.textContent = mongoCurrentDb + '.' + mongoCurrentColl;
-                        infoEl.style.color = '';
-                    }, 3000);
                 } else { 
                     document.getElementById('mongoResult').innerHTML = '<div class="message error">删除失败: ' + data.error + '</div>';
                 }
@@ -2316,8 +2353,8 @@
             const dbName = document.getElementById('mongoNewDbName').value.trim();
             const collName = document.getElementById('mongoNewCollName').value.trim();
             
-            if (!dbName) { alert('请输入数据库名称'); return; }
-            if (!collName) { alert('请输入集合名称'); return; }
+            if (!dbName) { showToast('请输入数据库名称', "info"); return; }
+            if (!collName) { showToast('请输入集合名称', "info"); return; }
             
             fetch('/api/v1/mongodb/create-database', {
                 method: 'POST',
@@ -2325,18 +2362,18 @@
                 body: JSON.stringify({connectionId: currentMongoConnId, database: dbName, collection: collName})
             }).then(function(r) { return r.json(); }).then(function(data) {
                 if (data.success) { 
-                    alert('数据库创建成功!'); 
+                    showToast('数据库创建成功!', "info"); 
                     closeCreateMongoDbModal();
                     loadMongoDatabases(currentMongoConnId);
                 } else { 
-                    alert('创建失败: ' + data.error); 
+                    showToast('创建失败: ' + data.error, 'error'); 
                 }
             });
         }
         
         // 显示索引管理对话框
         function showMongoIndexModal(connId) {
-            if (!mongoCurrentDb || !mongoCurrentColl) { alert('请先选择数据库和集合'); return; }
+            if (!mongoCurrentDb || !mongoCurrentColl) { showToast('请先选择数据库和集合', "info"); return; }
             currentMongoConnId = connId;
             document.getElementById('mongoIndexInfo').textContent = mongoCurrentDb + ' / ' + mongoCurrentColl;
             document.getElementById('mongoIndexKeys').value = '';
@@ -2381,7 +2418,7 @@
         // 创建索引
         function createMongoIndex() {
             var keysStr = document.getElementById('mongoIndexKeys').value.trim();
-            if (!keysStr) { alert('请输入索引字段'); return; }
+            if (!keysStr) { showToast('请输入索引字段', "info"); return; }
             
             // 解析字段: "name:1, age:-1" -> {"name": 1, "age": -1}
             var keys = {};
@@ -2392,7 +2429,7 @@
                 }
             });
             
-            if (Object.keys(keys).length === 0) { alert('无效的字段格式'); return; }
+            if (Object.keys(keys).length === 0) { showToast('无效的字段格式', "info"); return; }
             
             var unique = document.getElementById('mongoIndexUnique').checked;
             var name = document.getElementById('mongoIndexName').value.trim();
@@ -2414,10 +2451,9 @@
                     document.getElementById('mongoIndexUnique').checked = false;
                     document.getElementById('mongoIndexName').value = '';
                     loadMongoIndexes(currentMongoConnId);
-                    document.getElementById('mongoSuccessMsg').textContent = '索引创建成功: ' + data.index_name;
-                    setTimeout(function() { document.getElementById('mongoSuccessMsg').textContent = ''; }, 3000);
+                    showToast('索引创建成功: ' + data.index_name, 'success');
                 } else {
-                    alert('创建失败: ' + data.error);
+                    showToast('创建失败: ' + data.error, 'error');
                 }
             });
         }
@@ -2440,7 +2476,7 @@
                     document.getElementById('mongoSuccessMsg').textContent = '索引已删除';
                     setTimeout(function() { document.getElementById('mongoSuccessMsg').textContent = ''; }, 3000);
                 } else {
-                    alert('删除失败: ' + data.error);
+                    showToast('删除失败: ' + data.error, 'error');
                 }
             });
         }
@@ -2461,10 +2497,10 @@
                     renderConnectionList();
                     selectConnection(connId);
                 } else {
-                    alert('连接失败: ' + data.error);
+                    showToast('连接失败: ' + data.error, "info");
                 }
             } catch(e) {
-                alert('连接失败: ' + e.message);
+                showToast('连接失败: ' + e.message, "info");
             }
         }
         
@@ -2520,7 +2556,7 @@
         
         async function executeQuery(sql) {
             if (activeTabIndex < 0) {
-                alert('请先选择数据库连接');
+                showToast('请先选择数据库连接', "info");
                 return;
             }
             
@@ -2597,7 +2633,7 @@
         let sqlInsertTableName = '';
         function showInsertModal() {
             if (activeTabIndex < 0 || !editCtx || !editCtx.table) {
-                alert('请先选择一个表进行查询');
+                showToast('请先选择一个表进行查询', "info");
                 return;
             }
             sqlInsertTableName = editCtx.table;
@@ -2654,7 +2690,7 @@
             });
             
             if (fields.length === 0) {
-                alert('请至少填写一个字段');
+                showToast('请至少填写一个字段', "info");
                 return;
             }
             
@@ -2672,9 +2708,9 @@
                     // 刷新当前查询
                     var sqlEl = document.getElementById('sqlInput');
                     executeQuery(sqlEl.value);
-                    document.getElementById('resultInfo').textContent = '插入成功!';
+                    showToast('插入成功!', 'success');
                 } else {
-                    alert('插入失败: ' + data.error);
+                    showToast('插入失败: ' + data.error, 'error');
                 }
             });
         }
@@ -3025,7 +3061,7 @@
             const pkVals = {};
             for (const pk of editCtx.pkColumns) {
                 if (row[pk] === null || row[pk] === undefined) {
-                    alert('该行主键包含 NULL, 无法定位记录进行编辑');
+                    showToast('该行主键包含 NULL, 无法定位记录进行编辑', "info");
                     return;
                 }
                 pkVals[pk] = row[pk];
@@ -3071,12 +3107,12 @@
                         info.textContent = `已保存 ${editCtx.table}.${col} (${data.affectedRows} 行)`;
                     } else {
                         renderCellText(td, original);
-                        alert('保存失败: ' + data.error);
+                        showToast('保存失败: ' + data.error, 'error');
                         info.textContent = '保存失败';
                     }
                 } catch (e) {
                     renderCellText(td, original);
-                    alert('保存失败: ' + e.message);
+                    showToast('保存失败: ' + e.message, "info");
                     info.textContent = '保存失败';
                 }
             };
@@ -3090,7 +3126,7 @@
         // 通过主键删除行 (仅标记，从UI移除，等待保存)
         function deleteRowById(ri) {
             if (!editCtx || !editCtx.pkColumns.length || !lastResult) {
-                alert('无法删除：该查询没有主键');
+                showToast('无法删除：该查询没有主键', "info");
                 return;
             }
             const row = lastResult.data[ri];
@@ -3099,7 +3135,7 @@
             // 检查主键是否有NULL
             for (const pk of editCtx.pkColumns) {
                 if (row[pk] === null || row[pk] === undefined) {
-                    alert('该行主键包含 NULL, 无法定位记录');
+                    showToast('该行主键包含 NULL, 无法定位记录', "info");
                     return;
                 }
             }
@@ -3125,7 +3161,7 @@
         // 保存所有修改 (包括删除)
         async function saveAllChanges() {
             if (!editCtx || deletedRows.length === 0) {
-                alert('没有需要保存的修改');
+                showToast('没有需要保存的修改', "info");
                 return;
             }
             
@@ -3165,9 +3201,9 @@
             const errors = results.filter(function(r) { return !r.success; });
             
             if (errors.length > 0) {
-                alert('部分删除失败: ' + errors.map(function(e) { return e.error; }).join(', '));
+                showToast('部分删除失败: ' + errors.map(function(e) { return e.error; }).join(', '), "info");
             } else {
-                document.getElementById('resultInfo').textContent = '保存成功! ' + deletedRows.length + ' 行已删除';
+                showToast('保存成功! ' + deletedRows.length + ' 行已删除', 'success');
             }
             
             // 清空标记并刷新
@@ -3355,8 +3391,8 @@
             const defVal = document.getElementById('colEditDefault').value;
             const comment = document.getElementById('colEditComment').value;
             const notNull = document.getElementById('colEditNotNull').checked;
-            if (!name) { alert('请输入字段名'); return; }
-            if (!type) { alert('请选择类型'); return; }
+            if (!name) { showToast('请输入字段名', "info"); return; }
+            if (!type) { showToast('请选择类型', "info"); return; }
 
             const spec = { name, type, length: length || null, not_null: notNull, default: defVal, comment };
             let url, body;
@@ -3382,10 +3418,10 @@
                     closeColumnModal();
                     showStructure();  // 刷新表结构
                 } else {
-                    alert('保存失败: ' + data.error);
+                    showToast('保存失败: ' + data.error, 'error');
                 }
             } catch (e) {
-                alert('保存失败: ' + e.message);
+                showToast('保存失败: ' + e.message, "info");
             }
         }
 
@@ -3403,9 +3439,9 @@
                     });
                     const data = await res.json();
                     if (data.success) showStructure();
-                    else alert('删除失败: ' + data.error);
+                    else showToast('删除失败: ' + data.error, 'error');
                 } catch (e) {
-                    alert('删除失败: ' + e.message);
+                    showToast('删除失败: ' + e.message, "info");
                 }
             });
         }
@@ -3414,7 +3450,7 @@
         function showIndexModal() {
             const tab = openTabs[activeTabIndex];
             if (!tab) return;
-            if (!structureColumns.length) { alert('请先加载表结构'); return; }
+            if (!structureColumns.length) { showToast('请先加载表结构', "info"); return; }
             const dbType = (connections[tab.connId] || {}).db_type || 'postgresql';
             const methods = dbType === 'mysql'
                 ? [['', '默认'], ['BTREE', 'BTREE'], ['HASH', 'HASH'], ['FULLTEXT', 'FULLTEXT']]
@@ -3452,7 +3488,7 @@
                 const cb = row.querySelector('.idx-col');
                 if (cb.checked) cols.push({ name: cb.value, dir: row.querySelector('.idx-dir').value });
             });
-            if (!cols.length) { alert('请至少勾选一个索引字段'); return; }
+            if (!cols.length) { showToast('请至少勾选一个索引字段', "info"); return; }
             const body = {
                 connectionId: tab.connId,
                 table: tab.tableName,
@@ -3473,10 +3509,10 @@
                     closeIndexModal();
                     showStructure();
                 } else {
-                    alert('创建失败: ' + data.error);
+                    showToast('创建失败: ' + data.error, 'error');
                 }
             } catch (e) {
-                alert('创建失败: ' + e.message);
+                showToast('创建失败: ' + e.message, "info");
             }
         }
 
@@ -3494,9 +3530,9 @@
                     });
                     const data = await res.json();
                     if (data.success) showStructure();
-                    else alert('删除失败: ' + data.error);
+                    else showToast('删除失败: ' + data.error, 'error');
                 } catch (e) {
-                    alert('删除失败: ' + e.message);
+                    showToast('删除失败: ' + e.message, "info");
                 }
             });
         }
@@ -3606,10 +3642,10 @@
                 if (data.success) {
                     downloadFile(data.content, 'export.csv', 'text/csv');
                 } else {
-                    alert('导出失败: ' + data.error);
+                    showToast('导出失败: ' + data.error, "info");
                 }
             } catch(e) {
-                alert('导出失败: ' + e.message);
+                showToast('导出失败: ' + e.message, "info");
             }
         }
         
@@ -3630,10 +3666,10 @@
                 if (data.success) {
                     downloadFile(data.content, 'export.json', 'application/json');
                 } else {
-                    alert('导出失败: ' + data.error);
+                    showToast('导出失败: ' + data.error, "info");
                 }
             } catch(e) {
-                alert('导出失败: ' + e.message);
+                showToast('导出失败: ' + e.message, "info");
             }
         }
         
@@ -3740,12 +3776,12 @@
                 const result = await res.json();
                 
                 if (result.success) {
-                    alert(`✅ 连接成功！\n版本: ${result.serverVersion}\n延迟: ${result.latencyMs}ms`);
+                    showToast(`✅ 连接成功！\n版本: ${result.serverVersion}\n延迟: ${result.latencyMs}ms`, "info");
                 } else {
-                    alert(`❌ 连接失败: ${result.message}`);
+                    showToast(`❌ 连接失败: ${result.message}`, "info");
                 }
             } catch(e) {
-                alert('测试失败: ' + e.message);
+                showToast('测试失败: ' + e.message, "info");
             }
         }
         
@@ -3779,12 +3815,12 @@
             const isRedis = data.db_type === 'redis';
             const isMongo = data.db_type === 'mongodb';
             if (!data.name || !data.host) {
-                alert('请填写必填字段');
+                showToast('请填写必填字段', "info");
                 return;
             }
             // SQL数据库只需要用户名, 数据库名可选(可以连接后创建)
             if (!isRedis && !isMongo && !data.username) {
-                alert('请填写必填字段');
+                showToast('请填写必填字段', "info");
                 return;
             }
             
@@ -3803,11 +3839,12 @@
                 if (result.success) {
                     closeConnectionModal();
                     await loadConnections();
+                    showToast('保存成功!', 'success');
                 } else {
-                    alert('保存失败: ' + result.error);
+                    showToast('保存失败: ' + result.error, 'error');
                 }
             } catch(e) {
-                alert('保存失败: ' + e.message);
+                showToast('保存失败: ' + e.message, 'error');
             }
         }
         
@@ -3825,10 +3862,10 @@
                         delete activeConnections[connId];
                         await loadConnections();
                     } else {
-                        alert('删除失败: ' + data.error);
+                        showToast('删除失败: ' + data.error, 'error');
                     }
                 } catch(e) {
-                    alert('删除失败: ' + e.message);
+                    showToast('删除失败: ' + e.message, "info");
                 }
             });
         }
@@ -3898,7 +3935,7 @@
             const comment = document.getElementById('newTableComment').value;
             
             if (!tableName) {
-                alert('请输入表名');
+                showToast('请输入表名', "info");
                 return;
             }
             
@@ -3920,7 +3957,7 @@
             });
             
             if (columns.length === 0) {
-                alert('请至少添加一个字段');
+                showToast('请至少添加一个字段', "info");
                 return;
             }
             
@@ -3941,10 +3978,10 @@
                     document.getElementById('ddlPreview').textContent = data.ddl;
                     document.getElementById('ddlPreviewSection').style.display = 'block';
                 } else {
-                    alert('生成DDL失败: ' + data.error);
+                    showToast('生成DDL失败: ' + data.error, "info");
                 }
             } catch(e) {
-                alert('生成DDL失败: ' + e.message);
+                showToast('生成DDL失败: ' + e.message, "info");
             }
         }
         
@@ -3953,7 +3990,7 @@
             const comment = document.getElementById('newTableComment').value;
             
             if (!tableName) {
-                alert('请输入表名');
+                showToast('请输入表名', "info");
                 return;
             }
             
@@ -3975,7 +4012,7 @@
             });
             
             if (columns.length === 0) {
-                alert('请至少添加一个字段');
+                showToast('请至少添加一个字段', "info");
                 return;
             }
             
@@ -3993,14 +4030,14 @@
                 const data = await res.json();
                 
                 if (data.success) {
-                    alert('表创建成功！');
+                    showToast('表创建成功！', "info");
                     closeCreateTableModal();
                     refreshObjects(currentCreateConnId);
                 } else {
-                    alert('创建失败: ' + data.error);
+                    showToast('创建失败: ' + data.error, 'error');
                 }
             } catch(e) {
-                alert('创建失败: ' + e.message);
+                showToast('创建失败: ' + e.message, "info");
             }
         }
         
