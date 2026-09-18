@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pyNDB - 数据库管理工具</title>
+    <title>PyNDB - 数据库管理工具</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23007acc'/%3E%3Crect x='10' y='12' width='44' height='10' rx='3' fill='%23fff'/%3E%3Crect x='10' y='27' width='44' height='10' rx='3' fill='%23fff'/%3E%3Crect x='10' y='42' width='44' height='10' rx='3' fill='%23fff'/%3E%3C/svg%3E">    <style>        :root {
             color-scheme: dark;
-            --bg-main: #1e1e1e; --bg-panel: #252526; --bg-elev: #2d2d2d;
-            --bg-hover2: #37373d; --bg-row-hover: #2a2d2e;
-            --bg-input: #3c3c3c; --bg-input-hover: #505050;
-            --border: #3c3c3c; --border-strong: #5c5c5c; --border-suggest: #454545;
-            --scrollbar: #424242; --scrollbar-hover: #4f4f4f;
+            --bg-main: #252525; --bg-panel: #2d2d2d; --bg-elev: #333333;
+            --bg-hover2: #3d3d3d; --bg-row-hover: #353535;
+            --bg-input: #404040; --bg-input-hover: #505050;
+            --border: #454545; --border-strong: #606060; --border-suggest: #505050;
+            --scrollbar: #4a4a4a; --scrollbar-hover: #5a5a5a;
             --text: #d4d4d4; --text-muted: var(--text-muted); --text-secondary: #cccccc; --text-bright: #ffffff;
-            --placeholder: #666666; --selected-bg: #094771;
-            --bg-alt-row: #272729;
+            --placeholder: #707070; --selected-bg: #094771;
+            --bg-alt-row: #2d2d2f;
             --danger-text: #f48771; --danger-bg: #5a1d1d;
             --success-text: #89d185; --success-bg: #1d3d1d;
             --warn-text: #f1c40f; --warn-bg: #5d4d1d;
@@ -21,14 +21,14 @@
         }
         :root[data-theme='light'] {
             color-scheme: light;
-            --bg-main: #ffffff; --bg-panel: #f3f3f3; --bg-elev: #e9eaec;
-            --bg-hover2: #dfe4ea; --bg-row-hover: #edf0f3;
-            --bg-input: #ececec; --bg-input-hover: #d5d5d5;
-            --border: #d9d9d9; --border-strong: #b8b8b8; --border-suggest: #c8c8c8;
-            --scrollbar: #c1c1c1; --scrollbar-hover: #a8a8a8;
-            --text: #333333; --text-muted: #888888; --text-secondary: #555555; --text-bright: #1a1a1a;
-            --placeholder: #999999; --selected-bg: #cce4f7;
-            --bg-alt-row: #ececec;
+            --bg-main: #f5f5f5; --bg-panel: #eeeeee; --bg-elev: #e3e3e3;
+            --bg-hover2: #d8d8d8; --bg-row-hover: #e8e8e8;
+            --bg-input: #e0e0e0; --bg-input-hover: #d0d0d0;
+            --border: #cccccc; --border-strong: #aaaaaa; --border-suggest: #bbbbbb;
+            --scrollbar: #b0b0b0; --scrollbar-hover: #999999;
+            --text: #333333; --text-muted: #777777; --text-secondary: #555555; --text-bright: #1a1a1a;
+            --placeholder: #888888; --selected-bg: #cce4f7;
+            --bg-alt-row: #ebebeb;
             --danger-text: #c0392b; --danger-bg: #fdecea;
             --success-text: #1e7e34; --success-bg: #e8f5e9;
             --warn-text: #9a6700; --warn-bg: #fff8e1;
@@ -535,6 +535,7 @@
     <div class="app-container">
         <!-- 顶栏 -->
         <div class="app-header">
+
             <select id="themeSelect" class="theme-select" title="界面主题">
                 <option value="auto">🖥️ 跟随系统</option>
                 <option value="light">☀️ 亮色</option>
@@ -545,7 +546,8 @@
         <!-- 左侧边栏 -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h2>pyNDB 数据库管理工具</h2>
+                        <h2 style="">PyNDB 数据库管理工具</h2>
+
                 <button class="btn btn-primary btn-sm" onclick="showConnectionModal()">+ 新建</button>
             </div>
             <div class="sidebar-content" id="connectionList">
@@ -2390,18 +2392,12 @@
             if (activeTabIndex < 0) return;
             const tab = openTabs[activeTabIndex];
             const sqlEl = document.getElementById('sqlInput');
-            const sql = sqlEl.value.trim();
-            const autoTable = sqlEl.dataset.autoTable || '';
-            let querySql = sql;
-
-            // 输入框为空, 或残留的是其他表的自动查询时, 重新生成当前表查询 (默认10条)
-            if (!sql || (autoTable && autoTable !== tab.tableName)) {
-                const dbType = (connections[tab.connId] || {}).db_type;
-                const qt = dbType === 'mysql' ? '`' : '"';
-                querySql = `SELECT * FROM ${qt}${tab.tableName}${qt} LIMIT 10`;
-                sqlEl.value = querySql;
-                sqlEl.dataset.autoTable = tab.tableName;
-            }
+            const dbType = (connections[tab.connId] || {}).db_type;
+            const qt = dbType === 'mysql' ? '`' : '"';
+            // 每次点击表时都执行默认查询
+            const querySql = `SELECT * FROM ${qt}${tab.tableName}${qt} LIMIT 10`;
+            sqlEl.value = querySql;
+            sqlEl.dataset.autoTable = tab.tableName;
 
             // 表数据浏览模式与手动执行统一: 识别主表, 有主键即可编辑
             editCtx = await resolveEditCtx(tab.connId, querySql);
