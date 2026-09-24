@@ -87,6 +87,18 @@ def init_db():
         )
     ''')
     
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            connection_id INTEGER,
+            connection_name TEXT,
+            database_name TEXT,
+            sql_text TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -294,6 +306,40 @@ class QueryHistoryModel:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+class FavoriteModel:
+    """收藏 SQL 模型"""
+    
+    @staticmethod
+    def add(data: dict):
+        conn = sqlite3.connect(get_db_path())
+        conn.execute('''
+            INSERT INTO favorites (name, connection_id, connection_name, database_name, sql_text)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            data['name'], data.get('connection_id'),
+            data.get('connection_name', ''), data.get('database_name', ''),
+            data['sql_text']
+        ))
+        conn.commit()
+        conn.close()
+    
+    @staticmethod
+    def get_list():
+        conn = sqlite3.connect(get_db_path())
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM favorites ORDER BY created_at DESC')
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    
+    @staticmethod
+    def delete(fav_id: int):
+        conn = sqlite3.connect(get_db_path())
+        conn.execute('DELETE FROM favorites WHERE id = ?', (fav_id,))
+        conn.commit()
+        conn.close()
 
 
 # 初始化数据库

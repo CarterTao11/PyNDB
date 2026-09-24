@@ -1080,6 +1080,8 @@
         let openTabs = [];
         let activeTabIndex = -1;
         let currentConnId = null;
+        let favorites = [];
+        let currentFavoriteId = null;
         
         // 消息提示
         function showToast(message, type) {
@@ -1300,6 +1302,8 @@
                                 <div class="divider"></div>
                                 <button class="success" onclick="exportCSV()">导出CSV</button>
                                 <button class="success" onclick="exportJSON()">导出JSON</button>
+                                <button class="secondary" onclick="addFavorite()" title="收藏当前SQL">⭐ 收藏</button>
+                                <button class="secondary" onclick="showFavorites()" title="查看收藏">📋 收藏列表</button>
                             </div>
                             <textarea class="sql-textarea" id="sqlInput" placeholder="在此输入SQL语句... (选中可只执行选中部分, Ctrl+Enter执行, ↑↓翻历史)"></textarea>
                         </div>
@@ -4159,9 +4163,114 @@
             applyTheme();
         }
 
+        // ==================== 收藏功能 ====================
+        async function loadFavorites() {
+            try {
+                const res = await fetch('/api/v1/favorites');
+                const data = await res.json();
+                if (data.success) {
+                    favorites = data.favorites;
+                }
+            } catch(e) {}
+        }
+
+        async function addFavorite() {
+            const tab = openTabs[activeTabIndex];
+            if (!tab) { showToast('请先选择数据库连接', 'info'); return; }
+            const sqlEl = document.getElementById('sqlInput');
+            const sql = sqlEl.value.trim();
+            if (!sql) { showToast('请先输入SQL', 'info'); return; }
+            
+            const name = prompt('输入收藏名称：', sql.slice(0, 50) + (sql.length > 50 ? '...' : ''));
+            if (!name) return;
+            
+            try {
+                const res = await fetch('/api/v1/favorites', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: name,
+                        connection_id: tab.connId,
+                        connection_name: (connections[tab.connId] || {}).name || '',
+                        database_name: tab.dbName || '',
+                        sql_text: sql
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('收藏成功!', 'success');
+                    loadFavorites();
+                } else {
+                    showToast('收藏失败: ' + data.error, 'error');
+                }
+            } catch(e) {
+                showToast('收藏失败: ' + e.message, 'error');
+            }
+        }
+
+        function showFavorites() {
+            if (favorites.length === 0) {
+                showToast('暂无收藏', 'info');
+                return;
+            }
+            var html = '<div class="favorites-list" style="max-height:400px;overflow-y:auto;">';
+            favorites.forEach(function(fav) {
+                html += '<div class="favorite-item" style="padding:10px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="selectFavorite(' + fav.id + ')">';
+                html += '<div style="font-weight:bold;color:var(--text);">' + escapeHtml(fav.name) + '</div>';
+                html += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + escapeHtml(fav.sql_text) + '</div>';
+                html += '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">';
+                html += escapeHtml(fav.connection_name || '') + ' ｜ ' + (fav.created_at || '');
+                html += ' <span style="color:var(--danger-text);cursor:pointer;float:right;" onclick="event.stopPropagation();deleteFavorite(' + fav.id + ')">删除</span>';
+                html += '</div></div>';
+            });
+            html += '</div>';
+            
+            showCustomModal('收藏列表', html);
+        }
+
+        function selectFavorite(favId) {
+            closeCustomModal();
+            var fav = favorites.find(function(f) { return f.id === favId; });
+            if (!fav) return;
+            var sqlEl = document.getElementById('sqlInput');
+            sqlEl.value = fav.sql_text;
+            sqlEl.selectionStart = sqlEl.selectionEnd = sqlEl.value.length;
+        }
+
+        async function deleteFavorite(favId) {
+            try {
+                const res = await fetch('/api/v1/favorites/' + favId, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('已删除', 'success');
+                    loadFavorites();
+                    showFavorites();
+                }
+            } catch(e) {}
+        }
+
+        // ==================== 自定义弹框 ====================
+        function showCustomModal(title, contentHtml) {
+            var old = document.getElementById('customModal');
+            if (old) old.remove();
+            var div = document.createElement('div');
+            div.id = 'customModal';
+            div.className = 'modal show';
+            div.innerHTML = '<div class="modal-content" style="width:600px;">'
+                + '<div class="modal-header"><span>' + title + '</span><span class="close" onclick="closeCustomModal()">×</span></div>'
+                + '<div class="modal-body">' + contentHtml + '</div></div>';
+            document.body.appendChild(div);
+        }
+
+        function closeCustomModal() {
+            var el = document.getElementById('customModal');
+            if (el) el.remove();
+        }
+
         // 初始化
         init();
         initTheme();
+        loadFavorites();
     </script>
 </body>
 </html>

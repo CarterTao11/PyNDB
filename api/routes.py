@@ -3,7 +3,7 @@ API 路由
 """
 import time
 from flask import Blueprint, request, jsonify, session
-from models.database import ConnectionModel, QueryHistoryModel
+from models.database import ConnectionModel, QueryHistoryModel, FavoriteModel
 from utils.db_manager import DatabaseManager, DBConfig, get_connection as get_active_connection, set_connection, remove_connection
 from utils.log_config import setup_logging
 
@@ -323,6 +323,30 @@ def get_query_history():
     
     history = QueryHistoryModel.get_list(conn_id, limit)
     return jsonify({'success': True, 'history': history})
+
+
+@api.route('/favorites', methods=['GET'])
+def get_favorites():
+    """获取收藏列表"""
+    favorites = FavoriteModel.get_list()
+    return jsonify({'success': True, 'favorites': favorites})
+
+
+@api.route('/favorites', methods=['POST'])
+def add_favorite():
+    """添加收藏"""
+    data = request.json
+    if not data or not data.get('name') or not data.get('sql_text'):
+        return jsonify({'success': False, 'error': '缺少名称或SQL'}), 400
+    FavoriteModel.add(data)
+    return jsonify({'success': True, 'message': '收藏成功'})
+
+
+@api.route('/favorites/<int:fav_id>', methods=['DELETE'])
+def delete_favorite(fav_id):
+    """删除收藏"""
+    FavoriteModel.delete(fav_id)
+    return jsonify({'success': True, 'message': '已删除'})
 
 
 # ==================== 元数据 ====================
